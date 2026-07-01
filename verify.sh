@@ -11,6 +11,10 @@ J() { python3 -c "import sys,json;d=json.load(sys.stdin)$1;print(d)" 2>/dev/null
 echo "Sasyantra ERP — E2E smoke against $BASE"
 echo
 
+# clean baseline each run — verify mutates the DB (creates rows, pays payroll),
+# so reseed to avoid stale-state failures (e.g. a payroll row already paid).
+(cd backend && npm run seed >/dev/null 2>&1)
+
 # 1. login
 TOKEN=$(curl -s -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -d '{"email":"admin@sasyantra.in","password":"admin123"}' | J "['accessToken']")
 [ -n "$TOKEN" ] && ok "admin login returns JWT" || bad "admin login failed"
