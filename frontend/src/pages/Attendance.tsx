@@ -3,7 +3,7 @@ import { Zap, ChevronLeft, ChevronRight } from 'lucide-react';
 import { http } from '../api/client';
 import { Card, Badge, Spinner, Empty, Modal, Field, useToast } from '../components/ui';
 import { useAuth } from '../store';
-import type { Project, AttendanceCode } from '../types';
+import type { AttendanceCode } from '../types';
 
 const CODES: AttendanceCode[] = ['P', 'A', 'OT', 'HD', 'WO', 'LV', 'HL', 'NS', 'DS', 'TR'];
 const CODE_TONE: Record<string, string> = {
@@ -17,8 +17,6 @@ const codeLabel = (c: AttendanceCode) => c;
 export default function Attendance() {
   const role = useAuth((s) => s.user?.role);
   const canEdit = role === 'ADMIN' || role === 'OPS' || role === 'ACCOUNTS';
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectId, setProjectId] = useState('');
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [data, setData] = useState<{ employees: any[]; attendance: Record<number, Record<string, any>>; days: string[] } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -26,16 +24,12 @@ export default function Attendance() {
   const [form, setForm] = useState<any>({ code: 'P', otHours: 0, advance: 0, bonus: 0, travel: 0, food: 0, fine: 0, otherAllowance: 0, remarks: '' });
   const toast = useToast();
 
-  useEffect(() => { http.get('/projects').then(setProjects as any); }, []);
-  useEffect(() => { if (projects.length && !projectId) setProjectId(String(projects[0].id)); }, [projects, projectId]);
-
   const load = useCallback(async () => {
-    if (!projectId) return;
     setLoading(true);
     const yyyymm = month.replace('-', '');
-    const res: any = await http.get(`/attendance?month=${yyyymm}&projectId=${projectId}`);
+    const res: any = await http.get(`/attendance?month=${yyyymm}`);
     setData(res); setLoading(false);
-  }, [projectId, month]);
+  }, [month]);
   useEffect(() => { load(); }, [load]);
 
   const ymLabel = new Date(month + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
@@ -54,7 +48,7 @@ export default function Attendance() {
   const bulk = async () => {
     if (!confirm(`Mark all weekdays Present for ${ymLabel}? (skips days already marked)`)) return;
     const yyyymm = month.replace('-', '');
-    const res: any = await http.post(`/attendance/bulk?month=${yyyymm}&projectId=${projectId}&code=P`);
+    const res: any = await http.post(`/attendance/bulk?month=${yyyymm}&code=P`);
     toast(`${res.created} attendance rows created`); load();
   };
 
@@ -63,9 +57,8 @@ export default function Attendance() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <div><h1 className="text-2xl font-semibold tracking-tight">Attendance</h1><p className="text-sm text-slate-400">Monthly calendar · click any cell to mark</p></div>
+        <div><h1 className="text-2xl font-semibold tracking-tight">Attendance</h1><p className="text-sm text-slate-400">Monthly calendar · all employees · click any cell to mark</p></div>
         <div className="flex items-center gap-2 flex-wrap">
-          <select className="input w-auto" value={projectId} onChange={(e) => setProjectId(e.target.value)}>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
           <div className="flex items-center gap-1">
             <button onClick={() => shiftMonth(-1)} className="btn-ghost !p-2"><ChevronLeft size={16} /></button>
             <input type="month" className="input w-auto" value={month} onChange={(e) => setMonth(e.target.value)} />
@@ -76,7 +69,7 @@ export default function Attendance() {
       </div>
 
       <Card className="p-4">
-        {loading || !data ? <Spinner /> : !data.employees.length ? <Empty msg="No active employees on this project" /> : (
+        {loading || !data ? <Spinner /> : !data.employees.length ? <Empty msg="No active employees" /> : (
           <>
             <div className="flex flex-wrap gap-1.5 mb-3 text-xs">
               {CODES.map((c) => <span key={c} className="flex items-center gap-1"><span className={`h-4 w-4 rounded ${CODE_TONE[c]} grid place-items-center text-[9px] font-bold`}>{c[0]}</span>{codeLabel(c)}</span>)}

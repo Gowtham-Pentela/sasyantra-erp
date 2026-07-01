@@ -24,11 +24,11 @@ class AttendanceService {
   constructor(private prisma: PrismaService) {}
   private db() { return this.prisma.audited; }
 
+  // global: all active (non-archived) employees, regardless of project allocation.
+  // ponytail: attendance is a per-employee daily fact; project scope was an artificial filter.
   async byMonth(query: { month: string; projectId?: string }) {
     const { start, end } = monthRange(query.month);
-    const empWhere: any = { archivedAt: null, allocations: { some: { projectId: Number(query.projectId), endDate: null } } };
-    if (!query.projectId) delete empWhere.allocations;
-    const employees = await this.prisma.employee.findMany({ where: empWhere, select: { id: true, empCode: true, name: true, designation: true }, orderBy: { empCode: 'asc' } });
+    const employees = await this.prisma.employee.findMany({ where: { archivedAt: null }, select: { id: true, empCode: true, name: true, designation: true }, orderBy: { empCode: 'asc' } });
     const empIds = employees.map((e: any) => e.id);
     const rows = empIds.length
       ? await this.prisma.attendance.findMany({ where: { employeeId: { in: empIds }, date: { gte: start, lt: end } }, orderBy: { date: 'asc' } })
@@ -47,13 +47,13 @@ class AttendanceService {
     });
   }
 
-  // bulk-mark all weekdays present for a project's active employees (only where no row exists)
+  // bulk-mark all weekdays present for ALL active employees (only where no row exists).
   // ponytail: loop of upserts (audited). ceiling ~ (#employees × #weekdays); fine for 3 admins,
   // switch to unaudited createMany + a single summary log if throughput matters.
-  async bulk(query: { month: string; projectId: string; code?: string }) {
+  async bulk(query: { month: string; code?: string }) {
     const { start, end } = monthRange(query.month);
     const code: any = query.code || 'P';
-    const employees = await this.prisma.employee.findMany({ where: { archivedAt: null, allocations: { some: { projectId: Number(query.projectId), endDate: null } } }, select: { id: true } });
+    const employees = await this.prisma.employee.findMany({ where: { archivedAt: null }, select: { id: true } });
     let n = 0;
     for (const e of employees) {
       for (const d of weekdays(start, end)) {
