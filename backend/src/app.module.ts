@@ -15,6 +15,12 @@ import { InvoicesModule } from './invoices/invoices.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { PaymentsModule } from './payments/payments.module';
 import { UsersModule } from './users/users.module';
+import { ClientsModule } from './clients/clients.module';
+import { QuotationsModule } from './quotations/quotations.module';
+import { WorkOrdersModule } from './work-orders/work-orders.module';
+import { DocumentsModule } from './documents/documents.module';
+import { ReportsModule } from './reports/reports.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { JwtAuthGuard, RolesGuard } from './auth/guards';
 
 @Module({
@@ -32,6 +38,12 @@ import { JwtAuthGuard, RolesGuard } from './auth/guards';
     ExpensesModule,
     PaymentsModule,
     UsersModule,
+    ClientsModule,
+    QuotationsModule,
+    WorkOrdersModule,
+    DocumentsModule,
+    ReportsModule,
+    AnalyticsModule,
     DashboardModule,
     ActivityModule,
   ],

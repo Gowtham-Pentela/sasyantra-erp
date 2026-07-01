@@ -110,6 +110,51 @@ UTOKEN=$(curl -s -X POST "$BASE/auth/login" -H 'Content-Type: application/json' 
 UCODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $UTOKEN" "$BASE/dashboard")
 [ -n "$UTOKEN" ] && [ "$UCODE" = "200" ] && ok "new admin $UEMAIL logged in & read dashboard (200)" || bad "new-admin login (token len ${#UTOKEN}, code $UCODE)"
 
+# 13. clients: create + list shows it
+CNAME="Verify Client $RANDOM"
+CL=$(curl -s "${auth[@]}" -X POST "$BASE/clients" -H 'Content-Type: application/json' -d "{\"name\":\"$CNAME\",\"gst\":\"29TEST$RANDOM\",\"contactName\":\"VC\"}")
+CID=$(echo "$CL" | J "['id']")
+[ -n "$CID" ] && ok "client created id=$CID" || bad "client create"
+CFOUND=$(curl -s "${auth[@]}" "$BASE/clients?q=Verify%20Client" | python3 -c "import sys,json;d=json.load(sys.stdin);print(1 if any(c['id']==$CID for c in d) else 0)")
+[ "$CFOUND" = "1" ] && ok "client appears in list" || bad "client not in list"
+
+# 14. quotation: create (draft) + accept -> creates an invoice
+Q=$(curl -s "${auth[@]}" -X POST "$BASE/quotations" -H 'Content-Type: application/json' -d "{\"clientId\":$CID,\"lineItems\":[{\"desc\":\"Test staffing\",\"qty\":2,\"rate\":10000}],\"gstPercent\":18}")
+QID=$(echo "$Q" | J "['id']"); QNUM=$(echo "$Q" | J "['number']"); QTOT=$(echo "$Q" | J "['total']")
+case "$QNUM" in QUO-*) ok "quotation created $QNUM total=$QTOT" ;; *) bad "quotation number=$QNUM" ;; esac
+INVBEFORE=$(curl -s "${auth[@]}" "$BASE/invoices" | python3 -c "import sys,json;print(len(json.load(sys.stdin)))")
+ACC=$(curl -s "${auth[@]}" -X POST "$BASE/quotations/$QID/accept")
+AST=$(echo "$ACC" | J "['status']"); ACI=$(echo "$ACC" | J "['convertedInvoiceId']")
+INVAFTER=$(curl -s "${auth[@]}" "$BASE/invoices" | python3 -c "import sys,json;print(len(json.load(sys.stdin)))")
+[ "$AST" = "ACCEPTED" ] && [ -n "$ACI" ] && ok "quotation accepted -> invoiceId=$ACI" || bad "quotation accept status=$AST inv=$ACI"
+QDELTA=$(python3 -c "print(1 if ($INVAFTER)-($INVBEFORE)==1 else 0)")
+[ "$QDELTA" = "1" ] && ok "accept added 1 invoice ($INVBEFORE -> $INVAFTER)" || bad "invoice count unchanged ($INVBEFORE -> $INVAFTER)"
+# re-accept is idempotent (no second invoice)
+curl -s "${auth[@]}" -X POST "$BASE/quotations/$QID/accept" >/dev/null
+INV2=$(curl -s "${auth[@]}" "$BASE/invoices" | python3 -c "import sys,json;print(len(json.load(sys.stdin)))")
+[ "$INV2" = "$INVAFTER" ] && ok "re-accept is idempotent (invoice count stays $INV2)" || bad "re-accept leaked a 2nd invoice ($INV2)"
+
+# 15. work order: create + status transition
+WO=$(curl -s "${auth[@]}" -X POST "$BASE/work-orders" -H 'Content-Type: application/json' -d "{\"title\":\"Verify WO\",\"projectId\":$PRJ,\"clientId\":$CID,\"value\":500000}")
+WONUM=$(echo "$WO" | J "['number']"); WID=$(echo "$WO" | J "['id']")
+case "$WONUM" in WO-*) ok "work order created $WONUM" ;; *) bad "work order number=$WONUM" ;; esac
+WST=$(curl -s "${auth[@]}" -X POST "$BASE/work-orders/$WID/status" -H 'Content-Type: application/json' -d '{"status":"IN_PROGRESS"}' | J "['status']")
+[ "$WST" = "IN_PROGRESS" ] && ok "work order moved to IN_PROGRESS" || bad "work order status=$WST"
+
+# 16. documents: upload a file + fetch it back
+echo "verify-doc-content" > /tmp/verify_doc.txt
+DCODE=$(curl -s -o /dev/null -w "%{http_code}" "${auth[@]}" -X POST "$BASE/documents?entity=Employee&entityId=1" -F "file=@/tmp/verify_doc.txt")
+DURL=$(curl -s "${auth[@]}" "$BASE/documents?entity=Employee&entityId=1" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d[-1]['url'] if d else '')")
+DROOT="${BASE%/api}"
+DCONTENT=$(curl -s "$DROOT$DURL")
+[ "$DCODE" = "201" ] && [ "$DCONTENT" = "verify-doc-content" ] && ok "document uploaded ($DCODE) and served" || bad "document upload/serve (code=$DCODE, content='$DCONTENT')"
+
+# 17. reports + analytics read endpoints return data
+PMN=$(curl -s "${auth[@]}" "$BASE/reports/project-margin" | python3 -c "import sys,json;d=json.load(sys.stdin);print(1 if isinstance(d,list) and len(d)>=1 else 0)")
+[ "$PMN" = "1" ] && ok "reports/project-margin returns per-project list" || bad "reports/project-margin empty"
+HC=$(curl -s "${auth[@]}" "$BASE/analytics/headcount" | J "['total']")
+[ -n "$HC" ] && [ "$HC" -ge 1 ] 2>/dev/null && ok "analytics/headcount total=$HC" || bad "analytics/headcount total=$HC"
+
 echo
 echo "Result: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

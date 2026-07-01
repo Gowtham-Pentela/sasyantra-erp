@@ -78,14 +78,11 @@ class DashboardService {
         salaryPaidThisMonth,
         monthlyProfit, // indicative: revenue − expenses − salary paid this month
       },
-      // still stubbed (need their own modules): Clients/Quotations/Work Orders/Reports/Analytics/Documents
-      pending: {
-        grossProfit: 'needs Reports module (per-project margin breakdown)',
-      },
       projects: cards,
     };
   }
 }
+// ponytail: gross/net profit per project now live under /reports/project-margin; this overview stays a roll-up.
 
 @Controller('dashboard')
 class DashboardController {

@@ -3,8 +3,9 @@
 A premium, audit-proof ERP for manpower-supply businesses. This repository contains a
 **working vertical slice** — the core value loop (Employee → Project → Allocate →
 Attendance → Payroll → Dashboard) plus **Finance** (Budget, Invoices, Expenses, Payments,
-per-row salary payout) and **User management**, all under an immutable audit trail and
-JWT/RBAC auth — with the remaining modules scaffolded as stubs for future iterations.
+per-row salary payout), **Commercial front-office** (Clients, Quotations, Work Orders),
+**Reporting & Analytics**, **Documents**, and **User management** — all 16 original modules
+live, under an immutable audit trail and JWT/RBAC auth.
 
 > Built Ponytail-first: native APIs, fewest files, no speculative abstraction. The full
 > SRS feature surface is the *upgrade path*, not this release.
@@ -34,8 +35,9 @@ cd frontend && npm install && npm run dev   # app on http://localhost:5173
 
 End-to-end smoke (with the API running):
 ```bash
-./verify.sh        # 19 checks: login, dashboard, create+audit, payroll, RBAC, unauth,
-                   #           budget both directions, invoice, expense, salary payout, user mgmt
+./verify.sh        # 30 checks: auth, dashboard, audit, payroll, RBAC, finance (budget both
+                   #           directions, invoice, expense, salary payout), user mgmt, clients,
+                   #           quotation→invoice conversion, work orders, documents, reports, analytics
 ```
 
 ## Seeded logins
@@ -68,9 +70,23 @@ End-to-end smoke (with the API running):
   date-filtered.
 - **Settings · Users** — ADMIN creates other users (email/name/password/role), resets passwords,
   deletes (guards self + last admin).
+- **Clients** — client master (GST/PAN/contacts/billing), search, links to projects,
+  quotations & work orders.
+- **Quotations** — `QUO-####`, line-item editor with live subtotal/GST/total; DRAFT→SENT→ACCEPTED;
+  **Accept auto-creates an Invoice** from its lines (idempotent).
+- **Work Orders** — `WO-####` against a project (optional client/quotation), scope + period + value,
+  status OPEN→IN_PROGRESS→CLOSED/CANCELLED.
+- **Documents** — attach files to any record (Employee/Project/Client/Invoice); multipart upload,
+  served from local `/uploads`, download links, admin delete.
+- **Reports** — per-project margin (revenue − salary − expenses), salary register, and cash-flow
+  views, date-filtered, with **Print / save-as-PDF** (browser, no server lib).
+- **Analytics** — 12-month revenue vs expenses vs salary chart, contract-value pie, project-status
+  bar, headcount & skill mix, 30-day attendance utilization, budget health (ECharts).
 - **Activity Logs** — immutable audit trail of every create/update/delete/upsert across all
   tables, with table + timeline views and CSV export.
 - **Auth** — JWT, RBAC (ADMIN/OPS/ACCOUNTS), role-gated UI, protected routes.
+
+All 16 original modules + Budget are now live. No nav item is a stub anymore.
 
 ## Audit trail (how it works)
 Every write goes through `prisma.$extends({ query: { $allModels: { create/update/delete/upsert } }})`
@@ -79,20 +95,13 @@ in `backend/src/audit/audit.extension.ts`. User identity comes from a per-reques
 written via the *non-extended* base client (no recursion). `AuditLog` itself is excluded.
 Old values are read before mutation; new values captured after.
 
-## What's stubbed (upgrade path)
-These nav items render a "next iteration" page; the data model + audit machinery are ready:
-**Clients · Quotations · Work Orders · Reports · Analytics · Documents.**
-
-Consequences you'll see in the UI (honest, not faked): Dashboard KPIs that depend on these
-(gross/net profit breakdown by project) show a `needs Reports module` note instead of a number.
-
 ## Explicit upgrade list
-- Clients, Quotations, Work Orders; Reports (per-project margin) & Analytics dashboards; Documents.
-- Server-side branded PDF (Excel/PDF salary register, bank transfer sheet, GST invoices) — currently CSV only.
+- Server-side branded PDF (salary register, bank transfer sheet, GST invoices) — currently browser Print/CSV.
+- Document storage to S3 + OCR + e-signatures (currently local fs).
 - Refresh-token rotation (currently 8h access token).
 - Per-row audit for `createMany/updateMany/deleteMany` (currently single-op only).
 - Holiday calendar for `workingDays`; configurable PF/ESI/PT slabs (currently flat ₹200 PT, 12% PF, 0.75%/3.25% ESI, ESI ceiling ₹21,000).
-- Employee photo + document uploads (S3 / local fs), OCR, e-signatures.
+- Expense split payments & invoice credit-notes/void; recurring expenses.
 - Client portal, employee mobile app with GPS attendance, biometric, WhatsApp/email reminders.
 - Multi-company / multi-branch, PF/ESI compliance automation, bank API disbursement.
 

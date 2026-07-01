@@ -98,18 +98,6 @@ export default function Dashboard() {
               series: [{ type: 'bar', data: [k.monthlySalaryLiability, k.totalAdvancesGiven], itemStyle: { color: '#3366ff', borderRadius: [6, 6, 0, 0] }, barWidth: '40%' }],
             }} />
           </Card>
-
-          <Card>
-            <h3 className="font-semibold flex items-center gap-2 mb-3"><AlertCircle size={16} className="text-amber-500" /> Awaiting modules</h3>
-            <div className="grid sm:grid-cols-2 gap-2">
-              {Object.entries(d.pending).map(([k, v]) => (
-                <div key={k} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                  <span className="text-sm font-medium capitalize">{k.replace(/([A-Z])/g, ' $1').trim()}</span>
-                  <Badge tone="amber">{v.replace('needs ', '')}</Badge>
-                </div>
-              ))}
-            </div>
-          </Card>
         </div>
       </div>
     </div>

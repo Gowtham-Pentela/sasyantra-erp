@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Express } from 'express';
+import express from 'express';
 import { Prisma } from '@prisma/client';
 import { AppModule } from './app.module';
 import { auditExpressMiddleware } from './audit/audit.extension';
@@ -25,6 +26,8 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ transform: true }));
 
   const expressApp = app.getHttpAdapter().getInstance() as Express;
+  // serve uploaded documents (ponytail: local fs; S3 is the upgrade path)
+  expressApp.use('/uploads', express.static('uploads'));
 
   // request-scoped audit context (decodes JWT, sets AsyncLocalStorage for the chain)
   const jwt = app.get(JwtService);

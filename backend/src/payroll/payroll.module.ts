@@ -51,7 +51,9 @@ class PayrollService {
     const advanceRecovery = sum('advance'), fine = sum('fine');
     const pf = employee.pf ? basic.mul(d(PF_RATE)) : d(0);
     const esi = employee.esi && gross.lte(d(ESI_CEILING)) ? gross.mul(d(ESI_RATE)) : d(0);
-    const professionalTax = d(PT_FLAT);
+    // ponytail: PT is a flat slab, but never more than gross — guards daily-wage rows with
+    // zero attendance (gross=0) from producing a negative net. Configurable slabs are the upgrade path.
+    const professionalTax = gross.gt(0) ? d(PT_FLAT) : d(0);
     const net = gross.add(otAmount).add(bonus).add(travel).add(food).add(otherAllowance)
       .sub(advanceRecovery).sub(fine).sub(pf).sub(esi).sub(professionalTax).sub(attendanceDeduction);
     const employerPF = employee.pf ? basic.mul(d(PF_RATE)) : d(0);

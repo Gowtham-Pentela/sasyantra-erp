@@ -6,6 +6,10 @@ const prisma = new PrismaClient();
 // seed uses the RAW client (no audit extension) — bootstrap data isn't audited.
 async function main() {
   await prisma.auditLog.deleteMany();
+  await prisma.document.deleteMany();
+  await prisma.workOrder.deleteMany();
+  await prisma.quotation.deleteMany();
+  await prisma.client.deleteMany();
   await prisma.salaryPayment.deleteMany();
   await prisma.invoicePayment.deleteMany();
   await prisma.invoice.deleteMany();
@@ -189,7 +193,34 @@ async function main() {
   });
   await prisma.salaryPayment.create({ data: { payrollId: payroll0.id, employeeId: employees[0].id, month: lm, amount: 19709, paidDate: lastMonth, mode: 'BANK', utr: 'UTRSAL0', remarks: 'Last month salary' } });
 
-  console.log(`Seeded: ${users.length} users, ${projects.length} projects, ${employees.length} employees`);
+  // ---- commercial front-office seed (clients, quotation, work order) ----
+  const clients = await Promise.all([
+    prisma.client.create({ data: { name: 'GreenTech Infra Pvt Ltd', gst: '29AABCG1234L1Z5', pan: 'AABCG1234L', address: 'Whitefield, Bengaluru', contactName: 'Anita Rao', contactPhone: '9900012345', contactEmail: 'ap@greentech.in', billingCycle: 'Monthly', paymentTerms: '30 days from invoice' } }),
+    prisma.client.create({ data: { name: 'Bharat Steel Works', gst: '33AAACB5678M1Z2', pan: 'AAACB5678M', address: 'Hosur, Tamil Nadu', contactName: 'Mohan Das', contactPhone: '9900098765', contactEmail: 'po@bharatsteel.in', billingCycle: 'Monthly', paymentTerms: '45 days from invoice' } }),
+  ]);
+  await prisma.project.update({ where: { id: projects[0].id }, data: { clientId: clients[0].id } });
+  await prisma.project.update({ where: { id: projects[1].id }, data: { clientId: clients[1].id } });
+
+  await prisma.quotation.create({
+    data: {
+      number: 'QUO-0001', clientId: clients[0].id, projectId: projects[0].id, issueDate: new Date('2025-01-15'), validTill: new Date('2025-02-15'),
+      lineItems: [{ desc: 'Housekeeping staff — 3 resources', qty: 3, rate: 25000, amount: 75000 }, { desc: 'Supervisor', qty: 1, rate: 30000, amount: 30000 }],
+      subtotal: 105000, gstPercent: 18, gstAmount: 18900, total: 123900, status: 'ACCEPTED', notes: 'Quoted for Tech Park housekeeping',
+    },
+  });
+  await prisma.quotation.create({
+    data: {
+      number: 'QUO-0002', clientId: clients[1].id, projectId: projects[1].id, issueDate: new Date('2025-05-20'), validTill: new Date('2025-06-20'),
+      lineItems: [{ desc: 'Security guards — 6 resources', qty: 6, rate: 28000, amount: 168000 }],
+      subtotal: 168000, gstPercent: 18, gstAmount: 30240, total: 198240, status: 'SENT', notes: 'Awaiting client confirmation',
+    },
+  });
+
+  await prisma.workOrder.create({
+    data: { number: 'WO-0001', title: 'Tech Park Housekeeping — Annual', projectId: projects[0].id, clientId: clients[0].id, scope: 'Supply & manage housekeeping staff for Tech Park campus', startDate: new Date('2025-01-01'), endDate: new Date('2026-12-31'), value: 4800000, status: 'IN_PROGRESS' },
+  });
+
+  console.log(`Seeded: ${users.length} users, ${projects.length} projects, ${employees.length} employees, ${clients.length} clients`);
   console.log('Login: admin@sasyantra.in / admin123  (also ops@, accounts@ — same password)');
 }
 
