@@ -60,6 +60,24 @@ enum ProjectStatus {
   CANCELLED
 }
 
+enum ExpenseStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum PaymentMode {
+  BANK
+  CASH
+  UPI
+  CHEQUE
+}
+
+enum BudgetEntryType {
+  OPENING
+  TOPUP
+}
+
 model User {
   id           Int      @id @default(autoincrement())
   email        String   @unique
@@ -104,6 +122,7 @@ model Employee {
   allocations     Allocation[]
   attendance      Attendance[]
   payroll         Payroll[]
+  salaryPayments  SalaryPayment[]
 
   @@index([status])
 }
@@ -127,6 +146,8 @@ model Project {
   createdAt      DateTime       @default(now())
   allocations    Allocation[]
   payroll        Payroll[]
+  invoices       Invoice[]
+  expenses       Expense[]
 
   @@index([status])
 }
@@ -189,13 +210,102 @@ model Payroll {
   professionalTax     Decimal @default(0) @db.Decimal(18, 2)
   net                 Decimal @default(0) @db.Decimal(18, 2)
   employerCost        Decimal @default(0) @db.Decimal(18, 2)
+  paid                Boolean  @default(false)
+  paidDate            DateTime?
   generatedAt         DateTime @default(now())
   employee            Employee @relation(fields: [employeeId], references: [id])
   project             Project? @relation(fields: [projectId], references: [id])
+  salaryPayment       SalaryPayment?
 
   @@unique([employeeId, month])
   @@index([month])
   @@index([projectId])
+}
+
+// --- Finance models (company cash fund) ---
+
+// Opening balance + top-ups. Money in/out flows through the other tables.
+model BudgetEntry {
+  id        Int             @id @default(autoincrement())
+  amount    Decimal         @db.Decimal(18, 2)
+  type      BudgetEntryType @default(OPENING)
+  date      DateTime        @default(now())
+  note      String?
+  createdAt DateTime        @default(now())
+}
+
+model Invoice {
+  id         Int      @id @default(autoincrement())
+  number     String   @unique // INV-####
+  projectId  Int?
+  issueDate  DateTime @default(now())
+  dueDate    DateTime?
+  subtotal   Decimal  @default(0) @db.Decimal(18, 2)
+  gstPercent Decimal  @default(0) @db.Decimal(5, 2)
+  gstAmount  Decimal  @default(0) @db.Decimal(18, 2)
+  total      Decimal  @default(0) @db.Decimal(18, 2)
+  notes      String?
+  createdAt  DateTime @default(now())
+  project    Project? @relation(fields: [projectId], references: [id])
+  payments   InvoicePayment[]
+
+  @@index([projectId])
+  @@index([issueDate])
+}
+
+model InvoicePayment {
+  id           Int         @id @default(autoincrement())
+  invoiceId    Int
+  amount       Decimal     @db.Decimal(18, 2)
+  receivedDate DateTime    @default(now())
+  utr          String?
+  mode         PaymentMode @default(BANK)
+  remarks      String?
+  createdAt    DateTime    @default(now())
+  invoice      Invoice     @relation(fields: [invoiceId], references: [id])
+
+  @@index([invoiceId])
+  @@index([receivedDate])
+}
+
+model Expense {
+  id         Int           @id @default(autoincrement())
+  date       DateTime       @default(now())
+  category   String
+  vendor      String?
+  amount      Decimal       @default(0) @db.Decimal(18, 2)
+  gst         Decimal       @default(0) @db.Decimal(18, 2)
+  projectId   Int?
+  paidAmount  Decimal       @default(0) @db.Decimal(18, 2)
+  status      ExpenseStatus @default(UNPAID)
+  dueDate     DateTime?
+  paidDate    DateTime?
+  remarks     String?
+  createdAt   DateTime       @default(now())
+  project     Project?      @relation(fields: [projectId], references: [id])
+
+  @@index([date])
+  @@index([projectId])
+  @@index([status])
+}
+
+// one per payroll row (payrollId @unique). Reduces the cash fund when created.
+model SalaryPayment {
+  id         Int         @id @default(autoincrement())
+  payrollId  Int         @unique
+  employeeId Int
+  month      Int
+  amount     Decimal     @db.Decimal(18, 2)
+  paidDate   DateTime    @default(now())
+  utr        String?
+  mode       PaymentMode @default(BANK)
+  remarks    String?
+  createdAt  DateTime    @default(now())
+  payroll    Payroll     @relation(fields: [payrollId], references: [id])
+  employee   Employee    @relation(fields: [employeeId], references: [id])
+
+  @@index([month])
+  @@index([employeeId])
 }
 
 // Immutable audit trail. Never cascade-delete history when a record is archived.

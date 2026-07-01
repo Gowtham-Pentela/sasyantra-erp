@@ -36,6 +36,8 @@ export interface PayrollRow {
   attendanceDeduction: number; basic: number; otAmount: number; bonus: number;
   advanceRecovery: number; travel: number; food: number; pf: number; esi: number;
   professionalTax: number; net: number; employerCost: number;
+  paid: boolean; paidDate?: string | null;
+  salaryPayment?: { id: number; amount: number; paidDate: string; utr?: string | null; mode: string } | null;
   employee: { id: number; empCode: string; name: string; designation?: string | null };
 }
 

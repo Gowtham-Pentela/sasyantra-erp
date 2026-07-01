@@ -10,6 +10,11 @@ import Attendance from './pages/Attendance';
 import Payroll from './pages/Payroll';
 import Allocations from './pages/Allocations';
 import ActivityLog from './pages/ActivityLog';
+import Budget from './pages/Budget';
+import Invoices from './pages/Invoices';
+import Expenses from './pages/Expenses';
+import Payments from './pages/Payments';
+import Settings from './pages/Settings';
 import Stub from './pages/Stub';
 
 function Protected({ children }: { children: JSX.Element }) {
@@ -21,8 +26,7 @@ function Protected({ children }: { children: JSX.Element }) {
 
 const STUBS: Record<string, string> = {
   '/clients': 'Clients', '/quotations': 'Quotations', '/work-orders': 'Work Orders',
-  '/invoices': 'Invoices', '/payments': 'Payments', '/expenses': 'Expenses',
-  '/reports': 'Reports', '/analytics': 'Analytics', '/documents': 'Documents', '/settings': 'Settings',
+  '/reports': 'Reports', '/analytics': 'Analytics', '/documents': 'Documents',
 };
 
 export default function App() {
@@ -38,6 +42,11 @@ export default function App() {
           <Route path="attendance" element={<Attendance />} />
           <Route path="payroll" element={<Payroll />} />
           <Route path="allocations" element={<Allocations />} />
+          <Route path="budget" element={<Budget />} />
+          <Route path="invoices" element={<Invoices />} />
+          <Route path="expenses" element={<Expenses />} />
+          <Route path="payments" element={<Payments />} />
+          <Route path="settings" element={<Settings />} />
           <Route path="activity" element={<ActivityLog />} />
           {Object.entries(STUBS).map(([p, label]) => (
             <Route key={p} path={p.slice(1)} element={<Stub label={label} />} />

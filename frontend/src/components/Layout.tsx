@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Briefcase, Users, CalendarCheck, Wallet, Building2, FileText,
   ClipboardList, Receipt, IndianRupee, TrendingDown, BarChart3, PieChart, History,
-  Folder, Settings as SettingsIcon, Search, Moon, Sun, LogOut, Boxes, Menu,
+  Folder, Settings as SettingsIcon, Search, Moon, Sun, LogOut, Boxes, Menu, PiggyBank,
 } from 'lucide-react';
 import { useAuth, useTheme } from '../store';
 
@@ -13,18 +13,19 @@ const NAV = [
   { to: '/employees', label: 'Employees', icon: Users, live: true },
   { to: '/attendance', label: 'Attendance', icon: CalendarCheck, live: true },
   { to: '/payroll', label: 'Payroll', icon: Wallet, live: true },
+  { to: '/budget', label: 'Budget', icon: PiggyBank, live: true },
   { to: '/allocations', label: 'Allocation', icon: ClipboardList, live: true },
   { to: '/clients', label: 'Clients', icon: Building2, live: false },
   { to: '/quotations', label: 'Quotations', icon: FileText, live: false },
   { to: '/work-orders', label: 'Work Orders', icon: ClipboardList, live: false },
-  { to: '/invoices', label: 'Invoices', icon: Receipt, live: false },
-  { to: '/payments', label: 'Payments', icon: IndianRupee, live: false },
-  { to: '/expenses', label: 'Expenses', icon: TrendingDown, live: false },
+  { to: '/invoices', label: 'Invoices', icon: Receipt, live: true },
+  { to: '/payments', label: 'Payments', icon: IndianRupee, live: true },
+  { to: '/expenses', label: 'Expenses', icon: TrendingDown, live: true },
   { to: '/reports', label: 'Reports', icon: BarChart3, live: false },
   { to: '/analytics', label: 'Analytics', icon: PieChart, live: false },
   { to: '/activity', label: 'Activity Logs', icon: History, live: true },
   { to: '/documents', label: 'Documents', icon: Folder, live: false },
-  { to: '/settings', label: 'Settings', icon: SettingsIcon, live: false },
+  { to: '/settings', label: 'Settings', icon: SettingsIcon, live: true },
 ];
 
 export default function Layout() {

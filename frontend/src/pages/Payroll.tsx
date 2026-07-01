@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Play, Download, Wallet } from 'lucide-react';
+import { Play, Download, Wallet, CheckCircle2, BadgeIndianRupee } from 'lucide-react';
 import { http } from '../api/client';
-import { Card, Badge, Spinner, Empty, useToast, inr2 } from '../components/ui';
+import { Card, Badge, Spinner, Empty, Modal, Field, useToast, inr2 } from '../components/ui';
 import { useAuth } from '../store';
 import type { Project, PayrollRow } from '../types';
 
@@ -15,6 +15,8 @@ export default function Payroll() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const [payRow, setPayRow] = useState<PayrollRow | null>(null);
+  const [payForm, setPayForm] = useState({ paidDate: new Date().toISOString().slice(0, 10), utr: '', mode: 'BANK', remarks: '' });
 
   useEffect(() => { http.get('/projects').then(setProjects as any); }, []);
   useEffect(() => { if (projects.length && !projectId) setProjectId(String(projects[0].id)); }, [projects, projectId]);
@@ -42,7 +44,14 @@ export default function Payroll() {
     URL.revokeObjectURL(url);
   };
 
-  const totals = rows.reduce((a, r) => ({ gross: a.gross + r.gross, net: a.net + r.net, emp: a.emp + r.employerCost }), { gross: 0, net: 0, emp: 0 });
+  const totals = rows.reduce((a, r) => ({ gross: a.gross + r.gross, net: a.net + r.net, emp: a.emp + r.employerCost, paid: a.paid + (r.paid ? r.net : 0) }), { gross: 0, net: 0, emp: 0, paid: 0 });
+
+  const doPay = async () => {
+    if (!payRow) return;
+    setBusy(true);
+    try { await http.post(`/payroll/${payRow.id}/pay`, payForm); toast(`Paid ${inr2(payRow.net)} to ${payRow.employee.name}`); setPayRow(null); load(); }
+    catch (e: any) { toast(e.message, 'err'); } finally { setBusy(false); }
+  };
 
   return (
     <div className="space-y-4">
@@ -58,15 +67,16 @@ export default function Payroll() {
 
       {loading ? <Spinner /> : !rows.length ? <Card><Empty msg="No payroll for this month/project — click Generate" /></Card> : (
         <>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             <Card className="p-4"><div className="text-xs text-slate-400">Total Gross</div><div className="text-xl font-semibold text-brand-600">{inr2(totals.gross)}</div></Card>
             <Card className="p-4"><div className="text-xs text-slate-400">Total Net Payable</div><div className="text-xl font-semibold text-emerald-600">{inr2(totals.net)}</div></Card>
             <Card className="p-4"><div className="text-xs text-slate-400">Total Employer Cost</div><div className="text-xl font-semibold">{inr2(totals.emp)}</div></Card>
+            <Card className="p-4"><div className="text-xs text-slate-400">Paid This Month</div><div className="text-xl font-semibold text-emerald-600">{inr2(totals.paid)}</div></Card>
           </div>
           <Card className="p-0 overflow-hidden">
             <div className="overflow-auto max-h-[65vh]">
-              <table className="w-full text-sm min-w-[1100px]">
-                <thead><tr>{['Code', 'Name', 'Present', 'OT', 'Gross', 'Basic', 'OT ₹', 'Advance', 'PF', 'ESI', 'PT', 'Net', 'Emp. Cost'].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead>
+              <table className="w-full text-sm min-w-[1180px]">
+                <thead><tr>{['Code', 'Name', 'Present', 'OT', 'Gross', 'Basic', 'OT ₹', 'Advance', 'PF', 'ESI', 'PT', 'Net', 'Emp. Cost', 'Status'].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead>
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
@@ -83,6 +93,11 @@ export default function Payroll() {
                       <td className="td">{inr2(r.professionalTax)}</td>
                       <td className="td font-semibold text-emerald-600">{inr2(r.net)}</td>
                       <td className="td">{inr2(r.employerCost)}</td>
+                      <td className="td">
+                        {r.paid ? <Badge tone="green"><CheckCircle2 size={12} className="inline mr-1" />Paid {r.salaryPayment?.utr ? `· ${r.salaryPayment.utr}` : ''}</Badge>
+                          : canGen ? <button onClick={() => setPayRow(r)} className="btn-ghost !py-1 !px-2 text-xs"><BadgeIndianRupee size={12} className="inline mr-1" />Mark Paid</button>
+                          : <Badge tone="amber">Unpaid</Badge>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -91,7 +106,18 @@ export default function Payroll() {
           </Card>
         </>
       )}
-      <div className="text-xs text-slate-400 flex items-center gap-1.5"><Wallet size={13} /> Net = gross + OT + allowances − advance − fine − PF − ESI − PT − attendance deduction. PT is a flat ₹200 slab; PF/ESI per employee flags.</div>
+
+      <Modal open={!!payRow} onClose={() => setPayRow(null)} title={`Mark Paid · ${payRow?.employee.name ?? ''} · ${inr2(payRow?.net ?? 0)}`}>
+        <div className="space-y-3">
+          <Field label="Paid date"><input type="date" className="input" value={payForm.paidDate} onChange={(e) => setPayForm({ ...payForm, paidDate: e.target.value })} /></Field>
+          <Field label="UTR / Ref"><input className="input" value={payForm.utr} onChange={(e) => setPayForm({ ...payForm, utr: e.target.value })} placeholder="bank UTR / cheque no" /></Field>
+          <Field label="Mode"><select className="input" value={payForm.mode} onChange={(e) => setPayForm({ ...payForm, mode: e.target.value })}><option>BANK</option><option>CASH</option><option>UPI</option><option>CHEQUE</option></select></Field>
+          <Field label="Remarks"><input className="input" value={payForm.remarks} onChange={(e) => setPayForm({ ...payForm, remarks: e.target.value })} /></Field>
+          <div className="flex justify-end gap-2 pt-1"><button onClick={() => setPayRow(null)} className="btn-ghost">Cancel</button><button onClick={doPay} disabled={busy} className="btn-primary">{busy ? 'Saving…' : 'Record payment'}</button></div>
+        </div>
+      </Modal>
+
+      <div className="text-xs text-slate-400 flex items-center gap-1.5"><Wallet size={13} /> Net = gross + OT + allowances − advance − fine − PF − ESI − PT − attendance deduction. Marking paid creates a SalaryPayment and reduces the company budget.</div>
     </div>
   );
 }

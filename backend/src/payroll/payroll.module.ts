@@ -1,4 +1,4 @@
-import { Module, Controller, Get, Post, Query, Body, Injectable, NotFoundException, Res } from '@nestjs/common';
+import { Module, Controller, Get, Post, Query, Body, Param, ParseIntPipe, Injectable, NotFoundException, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { Prisma, type AttendanceCode } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -91,8 +91,25 @@ class PayrollService {
     if (query.projectId) where.projectId = Number(query.projectId);
     return this.prisma.payroll.findMany({
       where,
-      include: { employee: { select: { id: true, empCode: true, name: true, designation: true } } },
+      include: {
+        employee: { select: { id: true, empCode: true, name: true, designation: true } },
+        salaryPayment: true,
+      },
       orderBy: { employee: { empCode: 'asc' } },
+    });
+  }
+
+  // mark a payroll row paid: create SalaryPayment (drains the cash fund) + set paid flag.
+  async pay(id: number, dto: { paidDate?: string; utr?: string; mode?: string; remarks?: string }) {
+    const row = await this.prisma.payroll.findUnique({ where: { id }, include: { salaryPayment: true } });
+    if (!row) throw new NotFoundException('Payroll row not found');
+    if (row.salaryPayment) throw new NotFoundException('Already paid');
+    const paidDate = dto.paidDate ? new Date(dto.paidDate) : new Date();
+    return this.prisma.audited.$transaction(async (tx: any) => {
+      await tx.salaryPayment.create({
+        data: { payrollId: row.id, employeeId: row.employeeId, month: row.month, amount: row.net, paidDate, utr: dto.utr, mode: dto.mode ?? 'BANK', remarks: dto.remarks },
+      });
+      return tx.payroll.update({ where: { id }, data: { paid: true, paidDate }, include: { employee: { select: { empCode: true, name: true } }, salaryPayment: true } });
     });
   }
 
@@ -113,6 +130,7 @@ class PayrollController {
   @Get() list(@Query() q: any) { return this.svc.list(q); }
   @Get('export') export(@Query() q: any, @Res() res: Response) { return this.svc.csv(q, res); }
   @Post('generate') @Roles('ADMIN', 'ACCOUNTS') generate(@Body() b: any) { return this.svc.generate(b); }
+  @Post(':id/pay') @Roles('ADMIN', 'ACCOUNTS') pay(@Param('id', ParseIntPipe) id: number, @Body() dto: any) { return this.svc.pay(id, dto); }
 }
 
 @Module({ controllers: [PayrollController], providers: [PayrollService], imports: [PrismaModule] })

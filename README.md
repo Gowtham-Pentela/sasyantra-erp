@@ -2,8 +2,9 @@
 
 A premium, audit-proof ERP for manpower-supply businesses. This repository contains a
 **working vertical slice** — the core value loop (Employee → Project → Allocate →
-Attendance → Payroll → Dashboard) plus an immutable audit trail and JWT/RBAC auth — with
-the remaining modules scaffolded as stubs for future iterations.
+Attendance → Payroll → Dashboard) plus **Finance** (Budget, Invoices, Expenses, Payments,
+per-row salary payout) and **User management**, all under an immutable audit trail and
+JWT/RBAC auth — with the remaining modules scaffolded as stubs for future iterations.
 
 > Built Ponytail-first: native APIs, fewest files, no speculative abstraction. The full
 > SRS feature surface is the *upgrade path*, not this release.
@@ -33,7 +34,8 @@ cd frontend && npm install && npm run dev   # app on http://localhost:5173
 
 End-to-end smoke (with the API running):
 ```bash
-./verify.sh        # 8 checks: login, dashboard, create+audit, payroll, RBAC, unauth
+./verify.sh        # 19 checks: login, dashboard, create+audit, payroll, RBAC, unauth,
+                   #           budget both directions, invoice, expense, salary payout, user mgmt
 ```
 
 ## Seeded logins
@@ -54,7 +56,18 @@ End-to-end smoke (with the API running):
 - **Attendance** — month calendar grid (rows=employees, cols=days), click any cell to set
   code + OT + advance + allowances; bulk-mark weekdays Present.
 - **Payroll** — one-click generate from attendance; gross → net with PF/ESI/PT/advance
-  recovery/OT; totals; CSV export.
+  recovery/OT; totals; CSV export; **Mark Paid** per row (creates a SalaryPayment, drains the
+  budget, shows UTR + paid badge, "Paid this month" tile).
+- **Budget** — company cash fund: `available = opening + top-ups + invoice payments − expenses
+  paid − salary paid`, recomputed live from the other modules. Add opening/top-up, in/out
+  breakdown, recent movements ledger.
+- **Invoices** — GST invoices linked to projects, auto `INV-####`, computed `gstAmount`/`total`;
+  record payments (UTR/mode) → status PAID/PARTIAL/OVERDUE; payment lifts the budget.
+- **Expenses** — categorized, project-taggable, paid/overdue status; Mark Paid reduces the budget.
+- **Payments** — read-only ledger of money in (invoice payments) and out (salary payments),
+  date-filtered.
+- **Settings · Users** — ADMIN creates other users (email/name/password/role), resets passwords,
+  deletes (guards self + last admin).
 - **Activity Logs** — immutable audit trail of every create/update/delete/upsert across all
   tables, with table + timeline views and CSV export.
 - **Auth** — JWT, RBAC (ADMIN/OPS/ACCOUNTS), role-gated UI, protected routes.
@@ -68,16 +81,14 @@ Old values are read before mutation; new values captured after.
 
 ## What's stubbed (upgrade path)
 These nav items render a "next iteration" page; the data model + audit machinery are ready:
-**Clients · Quotations · Work Orders · Invoices · Payments · Expenses · Reports ·
-Analytics · Documents · Settings.**
+**Clients · Quotations · Work Orders · Reports · Analytics · Documents.**
 
 Consequences you'll see in the UI (honest, not faked): Dashboard KPIs that depend on these
-(monthly revenue, expenses, gross/net profit, outstanding payments, cash in hand, overdue
-invoices) show a `needs <module>` badge instead of a number.
+(gross/net profit breakdown by project) show a `needs Reports module` note instead of a number.
 
 ## Explicit upgrade list
-- Invoices → revenue, outstanding, overdue; Payments → cash in hand; Expenses → profit.
-- Server-side branded PDF (Excel/PDF salary register, bank transfer sheet) — currently CSV only.
+- Clients, Quotations, Work Orders; Reports (per-project margin) & Analytics dashboards; Documents.
+- Server-side branded PDF (Excel/PDF salary register, bank transfer sheet, GST invoices) — currently CSV only.
 - Refresh-token rotation (currently 8h access token).
 - Per-row audit for `createMany/updateMany/deleteMany` (currently single-op only).
 - Holiday calendar for `workingDays`; configurable PF/ESI/PT slabs (currently flat ₹200 PT, 12% PF, 0.75%/3.25% ESI, ESI ceiling ₹21,000).

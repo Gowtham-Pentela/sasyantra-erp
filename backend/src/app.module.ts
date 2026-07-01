@@ -10,6 +10,11 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { PayrollModule } from './payroll/payroll.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ActivityModule } from './activity/activity.module';
+import { BudgetModule } from './budget/budget.module';
+import { InvoicesModule } from './invoices/invoices.module';
+import { ExpensesModule } from './expenses/expenses.module';
+import { PaymentsModule } from './payments/payments.module';
+import { UsersModule } from './users/users.module';
 import { JwtAuthGuard, RolesGuard } from './auth/guards';
 
 @Module({
@@ -22,6 +27,11 @@ import { JwtAuthGuard, RolesGuard } from './auth/guards';
     AllocationsModule,
     AttendanceModule,
     PayrollModule,
+    BudgetModule,
+    InvoicesModule,
+    ExpensesModule,
+    PaymentsModule,
+    UsersModule,
     DashboardModule,
     ActivityModule,
   ],
