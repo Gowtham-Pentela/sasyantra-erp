@@ -1,0 +1,221 @@
+// Sasyantra Manpower Ops ERP — slice schema
+// Money is Decimal(18,2) in RUPEES (not paise). Decimal avoids float drift and
+// handles large contract values that Int32 paise would overflow (~Rs 2.14cr ceiling).
+// Coerced to JS number on output via one Express json replacer (main.ts).
+// ponytail: no Client/Invoice/Payment/Expense tables this iteration — stubs only.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  OPS
+  ACCOUNTS
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  LEFT
+  TEMPORARY
+  SUSPENDED
+  BLACKLISTED
+}
+
+enum SalaryType {
+  DAILY
+  MONTHLY
+}
+
+enum AttendanceCode {
+  P  // Present
+  A  // Absent
+  OT // Overtime
+  HD // Half Day
+  LV // Leave
+  WO // Weekly Off
+  HL // Holiday
+  NS // Night Shift
+  DS // Double Shift
+  TR // Training
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  ARCHIVE
+  RESTORE
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(ADMIN)
+  createdAt    DateTime @default(now())
+  auditLogs    AuditLog[]
+}
+
+model Employee {
+  id              Int              @id @default(autoincrement())
+  empCode         String           @unique
+  name            String
+  fatherName      String?
+  mobile          String?
+  altMobile       String?
+  address         String?
+  dob             DateTime?
+  gender          String?
+  bloodGroup      String?
+  emergencyContact String?
+  aadhar          String?
+  pan             String?
+  bankAccount     String?
+  ifsc            String?
+  upi             String?
+  joiningDate     DateTime         @default(now())
+  skillCategory   String?
+  designation     String?
+  salaryType      SalaryType       @default(DAILY)
+  dailyWage       Decimal          @default(0) @db.Decimal(18, 2)
+  monthlySalary   Decimal          @default(0) @db.Decimal(18, 2)
+  pf              Boolean          @default(false)
+  esi             Boolean          @default(false)
+  uan             String?
+  photoUrl        String?
+  status          EmployeeStatus   @default(ACTIVE)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  archivedAt      DateTime?
+  allocations     Allocation[]
+  attendance      Attendance[]
+  payroll         Payroll[]
+
+  @@index([status])
+}
+
+model Project {
+  id             Int            @id @default(autoincrement())
+  code           String         @unique
+  name           String
+  clientName     String
+  clientGst      String?
+  siteLocation   String?
+  mapsUrl        String?
+  startDate      DateTime       @default(now())
+  endDate        DateTime?
+  billingCycle   String?
+  paymentTerms   String?
+  contractValue  Decimal        @default(0) @db.Decimal(18, 2)
+  gstPercent     Decimal        @default(0) @db.Decimal(5, 2)
+  status         ProjectStatus  @default(ACTIVE)
+  projectManager String?
+  createdAt      DateTime       @default(now())
+  allocations    Allocation[]
+  payroll        Payroll[]
+
+  @@index([status])
+}
+
+model Allocation {
+  id            Int        @id @default(autoincrement())
+  employeeId    Int
+  projectId     Int
+  role          String?
+  dailyWage     Decimal    @default(0) @db.Decimal(18, 2)
+  effectiveDate DateTime   @default(now())
+  endDate       DateTime?
+  remarks       String?
+  createdAt     DateTime   @default(now())
+  employee      Employee   @relation(fields: [employeeId], references: [id])
+  project       Project    @relation(fields: [projectId], references: [id])
+
+  @@index([projectId])
+  @@index([employeeId])
+}
+
+model Attendance {
+  id              Int             @id @default(autoincrement())
+  employeeId      Int
+  date            DateTime        @db.Date
+  code            AttendanceCode  @default(P)
+  otHours         Decimal         @default(0) @db.Decimal(6, 2)
+  advance         Decimal         @default(0) @db.Decimal(18, 2)
+  bonus           Decimal         @default(0) @db.Decimal(18, 2)
+  travel          Decimal         @default(0) @db.Decimal(18, 2)
+  food            Decimal         @default(0) @db.Decimal(18, 2)
+  fine            Decimal         @default(0) @db.Decimal(18, 2)
+  otherAllowance  Decimal         @default(0) @db.Decimal(18, 2)
+  remarks         String?
+  createdAt       DateTime        @default(now())
+  employee        Employee        @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+model Payroll {
+  id                   Int     @id @default(autoincrement())
+  employeeId           Int
+  projectId           Int?
+  month                Int     // YYYYMM
+  workingDays         Decimal @default(0) @db.Decimal(6, 2)
+  presentDays          Decimal @default(0) @db.Decimal(6, 2)
+  otHours             Decimal @default(0) @db.Decimal(6, 2)
+  gross               Decimal @default(0) @db.Decimal(18, 2)
+  attendanceDeduction Decimal @default(0) @db.Decimal(18, 2)
+  basic               Decimal @default(0) @db.Decimal(18, 2)
+  otAmount            Decimal @default(0) @db.Decimal(18, 2)
+  bonus               Decimal @default(0) @db.Decimal(18, 2)
+  advanceRecovery     Decimal @default(0) @db.Decimal(18, 2)
+  travel              Decimal @default(0) @db.Decimal(18, 2)
+  food                Decimal @default(0) @db.Decimal(18, 2)
+  pf                  Decimal @default(0) @db.Decimal(18, 2)
+  esi                 Decimal @default(0) @db.Decimal(18, 2)
+  professionalTax     Decimal @default(0) @db.Decimal(18, 2)
+  net                 Decimal @default(0) @db.Decimal(18, 2)
+  employerCost        Decimal @default(0) @db.Decimal(18, 2)
+  generatedAt         DateTime @default(now())
+  employee            Employee @relation(fields: [employeeId], references: [id])
+  project             Project? @relation(fields: [projectId], references: [id])
+
+  @@unique([employeeId, month])
+  @@index([month])
+  @@index([projectId])
+}
+
+// Immutable audit trail. Never cascade-delete history when a record is archived.
+model AuditLog {
+  id        Int        @id @default(autoincrement())
+  userId    Int?
+  userName  String?
+  module    String
+  action    AuditAction
+  entity    String
+  entityId  String?
+  oldValue  Json?
+  newValue  Json?
+  reason    String?
+  ip        String?
+  userAgent String?
+  createdAt DateTime   @default(now())
+  user      User?       @relation(fields: [userId], references: [id])
+
+  @@index([module])
+  @@index([entity, entityId])
+  @@index([createdAt])
+}

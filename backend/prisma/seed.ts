@@ -1,0 +1,152 @@
+import { PrismaClient, Role, EmployeeStatus, SalaryType, AttendanceCode, ProjectStatus } from '@prisma/client';
+import bcrypt from 'bcryptjs';
+
+const prisma = new PrismaClient();
+
+// seed uses the RAW client (no audit extension) — bootstrap data isn't audited.
+async function main() {
+  await prisma.auditLog.deleteMany();
+  await prisma.payroll.deleteMany();
+  await prisma.attendance.deleteMany();
+  await prisma.allocation.deleteMany();
+  await prisma.employee.deleteMany();
+  await prisma.project.deleteMany();
+  await prisma.user.deleteMany();
+
+  const pwd = await bcrypt.hash('admin123', 10);
+  const users = await Promise.all([
+    prisma.user.create({ data: { email: 'admin@sasyantra.in', passwordHash: pwd, name: 'Administrator', role: Role.ADMIN } }),
+    prisma.user.create({ data: { email: 'ops@sasyantra.in', passwordHash: pwd, name: 'Operations Manager', role: Role.OPS } }),
+    prisma.user.create({ data: { email: 'accounts@sasyantra.in', passwordHash: pwd, name: 'Accounts User', role: Role.ACCOUNTS } }),
+  ]);
+
+  const projects = await Promise.all([
+    prisma.project.create({
+      data: {
+        code: 'PRJ-0001',
+        name: 'Tech Park Housekeeping',
+        clientName: 'GreenTech Infra Pvt Ltd',
+        clientGst: '29AABCG1234L1Z5',
+        siteLocation: 'Whitefield, Bengaluru',
+        mapsUrl: 'https://maps.google.com/?q=Whitefield+Bengaluru',
+        startDate: new Date('2025-01-01'),
+        endDate: new Date('2026-12-31'),
+        billingCycle: 'Monthly',
+        paymentTerms: '30 days from invoice',
+        contractValue: 4800000,
+        gstPercent: 18,
+        status: ProjectStatus.ACTIVE,
+        projectManager: 'Ramesh Kumar',
+      },
+    }),
+    prisma.project.create({
+      data: {
+        code: 'PRJ-0002',
+        name: 'Factory Security Staffing',
+        clientName: 'Bharat Steel Works',
+        clientGst: '33AAACB5678M1Z2',
+        siteLocation: 'Hosur, Tamil Nadu',
+        mapsUrl: 'https://maps.google.com/?q=Hosur',
+        startDate: new Date('2025-06-01'),
+        endDate: new Date('2027-05-31'),
+        billingCycle: 'Monthly',
+        paymentTerms: '45 days from invoice',
+        contractValue: 7200000,
+        gstPercent: 18,
+        status: ProjectStatus.ACTIVE,
+        projectManager: 'Suresh Patel',
+      },
+    }),
+  ]);
+
+  const empSeed = [
+    ['Ravi Shankar', 'Supervisor', 'Housekeeping', 850, true, true],
+    ['Manoj Kumar', 'Cleaner', 'Housekeeping', 600, true, false],
+    ['Deepa Rani', 'Cleaner', 'Housekeeping', 550, false, true],
+    ['Imran Khan', 'Security Guard', 'Security', 700, true, false],
+    ['Lakshmi N', 'Security Guard', 'Security', 700, true, true],
+    ['Vijay Prasad', 'Lead Security', 'Security', 950, true, false],
+  ] as const;
+
+  const employees: any[] = [];
+  for (let i = 0; i < empSeed.length; i++) {
+    const [name, designation, skill, dailyWage, pf, esi] = empSeed[i];
+    const e = await prisma.employee.create({
+      data: {
+        empCode: `EMP-${String(i + 1).padStart(4, '0')}`,
+        name,
+        fatherName: '—',
+        mobile: `90000${10000 + i}`,
+        address: 'Bengaluru',
+        dob: new Date('1990-01-01'),
+        gender: i % 2 ? 'Female' : 'Male',
+        bloodGroup: 'O+',
+        emergencyContact: `90000${20000 + i}`,
+        aadhar: `1234-5678-${900 + i}`,
+        pan: `ABCDE${1000 + i}F`,
+        bankAccount: `${1000000000 + i}`,
+        ifsc: 'HDFC0000123',
+        upi: `emp${i + 1}@upi`,
+        joiningDate: new Date('2025-01-15'),
+        skillCategory: skill,
+        designation,
+        salaryType: SalaryType.DAILY,
+        dailyWage,
+        monthlySalary: dailyWage * 26,
+        pf,
+        esi,
+        uan: pf ? `UAN${100000 + i}` : null,
+        status: EmployeeStatus.ACTIVE,
+      },
+    });
+    employees.push(e);
+  }
+
+  // allocate first 3 to project 1, last 3 to project 2
+  await Promise.all([
+    ...employees.slice(0, 3).map((e, idx) =>
+      prisma.allocation.create({
+        data: { employeeId: e.id, projectId: projects[0].id, role: idx === 0 ? 'Supervisor' : 'Worker', dailyWage: e.dailyWage, effectiveDate: new Date('2025-01-16') },
+      }),
+    ),
+    ...employees.slice(3).map((e, idx) =>
+      prisma.allocation.create({
+        data: { employeeId: e.id, projectId: projects[1].id, role: idx === 0 ? 'Lead' : 'Guard', dailyWage: e.dailyWage, effectiveDate: new Date('2025-06-01') },
+      }),
+    ),
+  ]);
+
+  // sample attendance: mark all present for the last 5 working days (excluding Sundays)
+  const today = new Date();
+  for (let d = 0; d < 10; d++) {
+    const day = new Date(today);
+    day.setDate(today.getDate() - d);
+    if (day.getDay() === 0) continue; // skip Sunday
+    if (d >= 5) break; // last 5 working days
+    for (const e of employees) {
+      await prisma.attendance.upsert({
+        where: { employeeId_date: { employeeId: e.id, date: day } },
+        create: { employeeId: e.id, date: day, code: AttendanceCode.P, otHours: d % 2 ? 2 : 0, food: 50 },
+        update: {},
+      });
+    }
+  }
+  // mark today: 1 absent, 1 half-day
+  await prisma.attendance.upsert({
+    where: { employeeId_date: { employeeId: employees[1].id, date: today } },
+    create: { employeeId: employees[1].id, date: today, code: AttendanceCode.A },
+    update: { code: AttendanceCode.A },
+  });
+  await prisma.attendance.upsert({
+    where: { employeeId_date: { employeeId: employees[2].id, date: today } },
+    create: { employeeId: employees[2].id, date: today, code: AttendanceCode.HD, advance: 500 },
+    update: { code: AttendanceCode.HD, advance: 500 },
+  });
+
+  console.log(`Seeded: ${users.length} users, ${projects.length} projects, ${employees.length} employees`);
+  console.log('Login: admin@sasyantra.in / admin123  (also ops@, accounts@ — same password)');
+}
+
+main()
+  .catch((e) => { console.error(e); process.exit(1); })
+  .finally(() => prisma.$disconnect());
