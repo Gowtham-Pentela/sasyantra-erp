@@ -135,7 +135,7 @@ async function main() {
     for (const e of employees) {
       await prisma.attendance.upsert({
         where: { employeeId_date: { employeeId: e.id, date: day } },
-        create: { employeeId: e.id, date: day, code: AttendanceCode.P, otHours: d % 2 ? 2 : 0, food: 50 },
+        create: { employeeId: e.id, date: day, code: AttendanceCode.P, food: 50 },
         update: {},
       });
     }

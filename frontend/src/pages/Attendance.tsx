@@ -13,6 +13,8 @@ const CODE_TONE: Record<string, string> = {
   NS: 'bg-indigo-500 text-white', DS: 'bg-brand-400 text-white', TR: 'bg-cyan-500 text-white',
 };
 const codeLabel = (c: AttendanceCode) => c;
+// local YYYY-MM-DD from a Date/ISO string (matches backend joining-date gate)
+const ymd = (s: string) => { const d = new Date(s); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 export default function Attendance() {
   const role = useAuth((s) => s.user?.role);
@@ -87,23 +89,28 @@ export default function Attendance() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.employees.map((e) => (
+                  {data.employees.map((e) => {
+                    const joinStr = ymd(e.joiningDate);
+                    return (
                     <tr key={e.id} className="group">
                       <td className="td sticky left-0 bg-white dark:bg-slate-900 z-10 min-w-[180px]">
                         <div className="flex items-center gap-2"><div className="h-7 w-7 rounded-full bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300 grid place-items-center text-xs font-semibold">{e.name[0]}</div><div><div className="text-sm font-medium">{e.name}</div><div className="text-xs text-slate-400">{e.empCode}</div></div></div>
                       </td>
                       {data.days.map((dstr) => {
                         const row = data.attendance[e.id]?.[dstr];
+                        const beforeJoin = dstr < joinStr;
                         return (
                           <td key={dstr} className="p-0.5 text-center">
-                            <button onClick={() => canEdit && openCell(e, dstr)} disabled={!canEdit} className={`h-9 w-9 rounded-lg text-xs font-bold transition ${row ? CODE_TONE[row.code] : 'bg-slate-50 dark:bg-slate-800/40 text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'} ${canEdit ? 'hover:scale-105 cursor-pointer' : 'cursor-default'}`}>
-                              {row ? row.code[0] : '·'}
+                            <button onClick={() => canEdit && !beforeJoin && openCell(e, dstr)} disabled={!canEdit || beforeJoin} title={beforeJoin ? 'Before joining date' : row?.otHours ? `${row.otHours} OT hrs` : ''} className={`h-9 w-9 rounded-lg text-xs font-bold transition flex flex-col items-center justify-center leading-none ${row ? CODE_TONE[row.code] : 'bg-slate-50 dark:bg-slate-800/40 text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'} ${beforeJoin ? 'opacity-30 cursor-not-allowed' : canEdit ? 'hover:scale-105 cursor-pointer' : 'cursor-default'}`}>
+                              <span>{row ? row.code[0] : '·'}</span>
+                              {row?.otHours ? <span className="text-[7px] font-bold opacity-90">{row.otHours}h</span> : null}
                             </button>
                           </td>
                         );
                       })}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -114,9 +121,9 @@ export default function Attendance() {
       <Modal open={!!cell} onClose={() => setCell(null)} title={cell ? `${cell.emp.name} · ${new Date(cell.date + 'T00:00:00').toLocaleDateString('en-IN')}` : ''}>
         {cell && (
           <form onSubmit={save} className="space-y-3">
-            <Field label="Attendance code"><div className="flex flex-wrap gap-1.5">{CODES.map((c) => <button type="button" key={c} onClick={() => set('code', c)} className={`h-9 w-9 rounded-lg text-xs font-bold ${form.code === c ? CODE_TONE[c] + ' ring-2 ring-offset-1 ring-brand-500 dark:ring-offset-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>{c}</button>)}</div></Field>
+            <Field label="Attendance code"><div className="flex flex-wrap gap-1.5">{CODES.map((c) => <button type="button" key={c} onClick={() => { set('code', c); if (c !== 'OT') set('otHours', 0); }} className={`h-9 w-9 rounded-lg text-xs font-bold ${form.code === c ? CODE_TONE[c] + ' ring-2 ring-offset-1 ring-brand-500 dark:ring-offset-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>{c}</button>)}</div></Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="OT hours"><input type="number" step="0.5" className="input" value={form.otHours} onChange={(e) => set('otHours', e.target.value)} /></Field>
+              {form.code === 'OT' && <Field label="OT hours"><input type="number" step="0.5" className="input" value={form.otHours} onChange={(e) => set('otHours', e.target.value)} /></Field>}
               <Field label="Advance (₹)"><input type="number" className="input" value={form.advance} onChange={(e) => set('advance', e.target.value)} /></Field>
               <Field label="Bonus (₹)"><input type="number" className="input" value={form.bonus} onChange={(e) => set('bonus', e.target.value)} /></Field>
               <Field label="Travel (₹)"><input type="number" className="input" value={form.travel} onChange={(e) => set('travel', e.target.value)} /></Field>
