@@ -18,7 +18,10 @@ payroll, invoicing, budget/cash, and the commercial front-office (clients,
 quotations, work orders).
 
 Owner / GitHub: **Gowtham-Pentela** — repo is **private**:
-https://github.com/Gowtham-Pentela/sasyantra-erp (branch `main`, 5 commits).
+https://github.com/Gowtham-Pentela/sasyantra-erp. `main` holds the original
+SRS build (6 commits); this iteration's bug fixes + free-stack deploy live on
+branch **`deploy/free-stack`** (11 commits, 5 ahead of `main`, not yet merged).
+Working tree is clean; all deploy changes are committed there.
 
 ## 2. Stack (exact, do not drift)
 
@@ -202,27 +205,30 @@ the DB. Run result: 30 passed, 0 failed. Keep it idempotent.
 - Client portal, employee mobile app (GPS attendance, biometric),
   WhatsApp/email reminders.
 - Multi-company / multi-branch, PF/ESI compliance automation, bank API disbursement.
-- **Deployment** — Dockerfile now exists (multi-stage, root). Render/Vercel
-  were paywalled (managed Postgres) → pivoted to **Google Cloud Run (backend,
-  generous free tier) + Neon (Postgres, scale-to-zero) + Cloudflare Pages
-  (frontend)**. See §14 for in-progress state. The payslip PDF is now
-  **streamed server-side** (pdfkit, stateless — works on Cloud Run) instead
-  of browser Print only — done.
+- **Deployment** — **DONE.** Live stack: backend on **Google Cloud Run**
+  (auto-redeploys on `git push` via GitHub Actions + Workload Identity
+  Federation), DB on **Neon** Postgres, frontend on **Firebase Hosting**.
+  Render/Vercel were paywalled (managed Postgres) and Cloudflare Pages was
+  the original frontend plan, but Firebase Hosting was used instead
+  (GCP-native, same Google account, clean SPA rewrites). `Dockerfile`
+  (multi-stage, root), `cloudbuild.yaml`, `.gcloudignore`, `firebase.json`,
+  `.firebaserc`, `.github/workflows/deploy-backend.yml` are all in the repo.
+  The payslip PDF is **streamed server-side** (pdfkit, stateless — works on
+  Cloud Run) instead of browser Print only. Full details + live URLs in §14.
 
 ## 12. Repo state (as of this writing)
 
-- branch `main`, 5 commits, `origin` → Gowtham-Pentela/sasyantra-erp (private).
-- commits: `00d15e2` initial slice → `bce2e7b` finance → `893c9ca` commercial
-  (clients/quotes/WO/docs/reports/analytics) → `07b2c73` verify reseed →
-  `812b977` global attendance.
-- **Working tree NOT clean** — this iteration's changes are uncommitted:
-  `backend/src/attendance/attendance.module.ts`, `backend/src/payroll/payroll.module.ts`
-  (pdfkit streaming), `backend/prisma/seed.ts`, `backend/package.json`
-  (pdfkit dep), `frontend/src/pages/{Payroll,Attendance}.tsx`,
-  `frontend/src/api/client.ts` (`BASE` export), `frontend/vite.config.ts`
-  (`/uploads` proxy), `frontend/src/vite-env.d.ts`, `Dockerfile`,
-  `render.yaml` (now inert), `vercel.json` (now inert). Commit once the
-  binaryTargets blocker is fixed and the container validates.
+- Active branch **`deploy/free-stack`** (11 commits), `origin` →
+  Gowtham-Pentela/sasyantra-erp (private). It's 5 commits ahead of `main`;
+  `main` is unchanged from the original SRS build (6 commits) — the deploy
+  work has **not been merged to `main`** yet (a deliberate open question).
+- This iteration's commits on `deploy/free-stack`:
+  - `91117d3` — payroll OT/joining-date/individual-payslip fixes + stored PDF + free-stack Dockerfile
+  - `2107d45` — move Prisma CLI to dependencies (for prod install)
+  - `b4112b6` — Cloud Run + Firebase Hosting live; GitHub Actions auto-redeploy (WIF)
+  - `523e020` — docs: mark GitHub Actions auto-redeploy verified green
+- **Working tree is clean** — everything is committed.
+- Inert files still in tree (harmless, superseded): `render.yaml`, `vercel.json`.
 
 ## 13. Where to look first
 
@@ -261,33 +267,27 @@ the DB. Run result: 30 passed, 0 failed. Keep it idempotent.
    added to backend deps; `BASE` exported from `api/client.ts`; vite proxies
    `/uploads`.
 
-### Free-stack deploy (in progress)
+### What's deployed & running now (all live, all verified 2026-07-02)
 
-- **DB:** Neon Postgres provisioned, 3 migrations applied, seeded
-  (admin/ops/accounts). Connection string (in `backend/.env`, gitignored) uses
-  `sslmode=require&channel_binding=require` and works with Prisma. **The
-  password in the Neon connection string is a live secret — rotate it if this
-  transcript is ever shared.**
-- **Backend → Google Cloud Run:** `Dockerfile` (multi-stage, node20-bookworm-slim,
-  installs openssl at runtime, `prisma migrate deploy && node dist/main.js`,
-  reads `PORT`). Builds locally. **BLOCKER:** image crashes at
-  `PrismaService.onModuleInit` — Prisma Client generated for
-  `linux-arm64-openssl-1.1.x` but runtime needs `linux-arm64-openssl-3.0.x`
-  (built on Apple Silicon). Fix: add `binaryTargets` to the generator block in
-  `backend/prisma/schema.prisma` — e.g.
-  `binaryTargets = ["native","linux-arm64-openssl-3.0.x","debian-openssl-3.0.x"]`
-  (bookworm = Debian 12 = openssl 3, so amd64 uses `debian-openssl-3.0.x` —
-  NOT `linux-amd64-…`, which isn't a valid Prisma target), `prisma generate`, Then re-run container and verify login + payslip PDF
-  returns `application/pdf`.
-- **Cloud Run deploy steps (not yet executed):** create GCP project, enable
-  Cloud Run + Artifact Registry (or build-from-source), deploy the image with
-  env vars `DATABASE_URL`, `JWT_SECRET` (`918451…c14bb`), `JWT_ACCESS_EXPIRES=8h`,
-  `PORT=8080`, allow unauthenticated. Frontend env `VITE_API_URL=https://<run-url>/api`.
-- **Frontend → Cloudflare Pages:** root `frontend/`, build `npm run build`,
-  output `dist`, env `VITE_API_URL` as above. Repo is private but CF Pages can
-  build from a private repo. `vercel.json` left in tree but inert.
+| Piece | Host | URL / resource |
+|---|---|---|
+| Frontend (React SPA) | Firebase Hosting | https://kgf-foundry-06051646.web.app |
+| Backend (NestJS API) | Google Cloud Run (auto-redeploy on push) | https://sasyantra-api-962851079223.us-central1.run.app |
+| Database | Neon Postgres (free, scale-to-zero) | migrated (3 migrations) + seeded |
+| Secrets | Secret Manager | `sasyantra-db-url`, `sasyantra-jwt-secret` |
+| CI/CD | GitHub Actions → Cloud Run | `.github/workflows/deploy-backend.yml` (WIF) |
 
-### Pending (next session, in order)
+GCP project: `kgf-foundry-06051646` (billing on). The build/deploy chain runs
+as SA `github-deployer@…` via Workload Identity Federation (no keys). Frontend
+redeploys are still manual (`firebase deploy --only hosting`).
+
+> **Security:** the Neon DB password appeared in this session's shell commands.
+> If this transcript is shared, rotate it in Neon and add a new Secret Manager
+> version (`gcloud secrets versions add sasyantra-db-url --data-file=-`) — the
+> next push picks it up automatically. Demo seed passwords (`admin123`) are
+> live — change via Settings → Users before real use.
+
+### Chronological deploy log (most items DONE)
 
 1. ~~Fix Prisma `binaryTargets`~~ **DONE 2026-07-02.** `binaryTargets = ["native",
    "linux-arm64-openssl-3.0.x","debian-openssl-3.0.x"]` (amd64 target is
@@ -354,5 +354,7 @@ the DB. Run result: 30 passed, 0 failed. Keep it idempotent.
    `--condition=None >/dev/null`); after that the run went green. Live backend
    re-verified (401/login/payslip PDF) post-redeploy. Frontend redeploy still
    manual (`firebase deploy`).
-8. (Loose end) `deploy/render-vercel` PR is open and superseded — close it.
-9. Commit this iteration's changes (see §12).
+8. (Loose end) `deploy/render-vercel` PR is open and superseded — close it
+   (and decide whether to merge `deploy/free-stack` → `main`).
+9. ~~Commit this iteration's changes~~ **DONE** — committed as `91117d3`,
+   `b4112b6`, `523e020` on `deploy/free-stack` (see §12). Working tree clean.
