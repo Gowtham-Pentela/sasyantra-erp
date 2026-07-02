@@ -346,5 +346,13 @@ the DB. Run result: 30 passed, 0 failed. Keep it idempotent.
    service keeps its last good revision if a workflow run fails (no outage).
    Frontend: re-run `firebase deploy` after rebuilding `dist` with the right
    `VITE_API_URL` (not yet automated).
+   **ACTIVATED & VERIFIED 2026-07-02** — first `git push` (commit `b4112b6`)
+   triggered the workflow; it built + pushed to AR + deployed a new revision
+   (`sasyantra-api-00002-…`) via WIF. One fix needed: the deployer SA's
+   `roles/iam.serviceAccountUser` on the runtime SA had silently failed to
+   grant (re-granted via `add-iam-policy-binding` without the masking
+   `--condition=None >/dev/null`); after that the run went green. Live backend
+   re-verified (401/login/payslip PDF) post-redeploy. Frontend redeploy still
+   manual (`firebase deploy`).
 8. (Loose end) `deploy/render-vercel` PR is open and superseded — close it.
 9. Commit this iteration's changes (see §12).
