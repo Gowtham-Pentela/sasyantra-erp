@@ -4,8 +4,10 @@
 > authoritative "what we built, where it lives, how to run it, what's left"
 > so a new session continues without re-discovering the codebase.
 >
-> Last updated: 2026-07-01. All 16 SRS modules + Budget are live and green
-> (`./verify.sh` 30/30). The code is pushed to GitHub (private).
+> Last updated: 2026-07-02. All 16 SRS modules + Budget live. Three payroll/
+> attendance bugs fixed + payslip PDF download added. **Fully deployed &
+> validated:** backend on Cloud Run, DB on Neon, frontend on Firebase Hosting.
+> Live URLs in §14.
 
 ## 1. What this is
 
@@ -200,10 +202,12 @@ the DB. Run result: 30 passed, 0 failed. Keep it idempotent.
 - Client portal, employee mobile app (GPS attendance, biometric),
   WhatsApp/email reminders.
 - Multi-company / multi-branch, PF/ESI compliance automation, bank API disbursement.
-- **Deployment** — the app currently only runs on localhost. To make it
-  reachable by the company, prep a `Dockerfile` + `docker-compose` (app +
-  Postgres) so it runs anywhere, or deploy to Render/Railway. **User has NOT
-  confirmed this yet** — offer, don't start unprompted.
+- **Deployment** — Dockerfile now exists (multi-stage, root). Render/Vercel
+  were paywalled (managed Postgres) → pivoted to **Google Cloud Run (backend,
+  generous free tier) + Neon (Postgres, scale-to-zero) + Cloudflare Pages
+  (frontend)**. See §14 for in-progress state. The payslip PDF is now
+  **streamed server-side** (pdfkit, stateless — works on Cloud Run) instead
+  of browser Print only — done.
 
 ## 12. Repo state (as of this writing)
 
@@ -211,9 +215,14 @@ the DB. Run result: 30 passed, 0 failed. Keep it idempotent.
 - commits: `00d15e2` initial slice → `bce2e7b` finance → `893c9ca` commercial
   (clients/quotes/WO/docs/reports/analytics) → `07b2c73` verify reseed →
   `812b977` global attendance.
-- Working tree clean.
-- Servers were running at handover (`:3000` API, `:5173` web); DB had 4 users
-  (3 seed + 1 created by a prior `verify.sh` run).
+- **Working tree NOT clean** — this iteration's changes are uncommitted:
+  `backend/src/attendance/attendance.module.ts`, `backend/src/payroll/payroll.module.ts`
+  (pdfkit streaming), `backend/prisma/seed.ts`, `backend/package.json`
+  (pdfkit dep), `frontend/src/pages/{Payroll,Attendance}.tsx`,
+  `frontend/src/api/client.ts` (`BASE` export), `frontend/vite.config.ts`
+  (`/uploads` proxy), `frontend/src/vite-env.d.ts`, `Dockerfile`,
+  `render.yaml` (now inert), `vercel.json` (now inert). Commit once the
+  binaryTargets blocker is fixed and the container validates.
 
 ## 13. Where to look first
 
@@ -226,3 +235,116 @@ the DB. Run result: 30 passed, 0 failed. Keep it idempotent.
 - `frontend/src/components/ui.tsx` — UI primitives every page uses.
 - `frontend/src/App.tsx` + `Layout.tsx` — routing + nav.
 - `verify.sh` — the contract the whole system must keep green.
+
+## 14. Current iteration (2026-07-02) — bug fixes + free-stack deploy
+
+### Done & verified
+
+1. **OT phantom hours** — root cause: seed injected `otHours` on non-OT days
+   and the attendance grid hid OT. Fixed server-side: `attendance` upsert now
+   forces `otHours = code === 'OT' ? Number(dto.otHours ?? 0) : 0`; `bulk`
+   skips non-OT otHours; seed no longer sets otHours on P days (just `food:50`).
+   Frontend grid now shows OT hours and clears the OT field when a non-OT code
+   is picked. 27 dirty rows cleaned, 2 pre-joining rows deleted. Verified:
+   Ravi=4h, Manoj=0, Deepa=0.
+2. **Joining-date gate** — cannot mark attendance before `employee.joiningDate`.
+   `attendance` upsert throws `BadRequestException` if `dto.date < ymd(joiningDate)`;
+   `bulk` skips days before joining; grid cells before joining are disabled
+   (opacity-30). Verified: 400 on pre-joining, 200 on valid.
+3. **Individual payslip generation** — `/payroll/generate` now accepts
+   `employeeId`; computes one employee from their active allocation wage.
+   Frontend: "Generate one" modal (`UserPlus`), per-row PDF button (`FileText`).
+4. **Payslip PDF download** — `GET /payroll/:id/payslip` (ADMIN/ACCOUNTS)
+   **streams** a branded pdfkit PDF straight from the stored `Payroll` row
+   (source of truth, no file written → works on ephemeral Cloud Run fs).
+   Frontend `genPdf` does authenticated `fetch` → blob download. `pdfkit`
+   added to backend deps; `BASE` exported from `api/client.ts`; vite proxies
+   `/uploads`.
+
+### Free-stack deploy (in progress)
+
+- **DB:** Neon Postgres provisioned, 3 migrations applied, seeded
+  (admin/ops/accounts). Connection string (in `backend/.env`, gitignored) uses
+  `sslmode=require&channel_binding=require` and works with Prisma. **The
+  password in the Neon connection string is a live secret — rotate it if this
+  transcript is ever shared.**
+- **Backend → Google Cloud Run:** `Dockerfile` (multi-stage, node20-bookworm-slim,
+  installs openssl at runtime, `prisma migrate deploy && node dist/main.js`,
+  reads `PORT`). Builds locally. **BLOCKER:** image crashes at
+  `PrismaService.onModuleInit` — Prisma Client generated for
+  `linux-arm64-openssl-1.1.x` but runtime needs `linux-arm64-openssl-3.0.x`
+  (built on Apple Silicon). Fix: add `binaryTargets` to the generator block in
+  `backend/prisma/schema.prisma` — e.g.
+  `binaryTargets = ["native","linux-arm64-openssl-3.0.x","debian-openssl-3.0.x"]`
+  (bookworm = Debian 12 = openssl 3, so amd64 uses `debian-openssl-3.0.x` —
+  NOT `linux-amd64-…`, which isn't a valid Prisma target), `prisma generate`, Then re-run container and verify login + payslip PDF
+  returns `application/pdf`.
+- **Cloud Run deploy steps (not yet executed):** create GCP project, enable
+  Cloud Run + Artifact Registry (or build-from-source), deploy the image with
+  env vars `DATABASE_URL`, `JWT_SECRET` (`918451…c14bb`), `JWT_ACCESS_EXPIRES=8h`,
+  `PORT=8080`, allow unauthenticated. Frontend env `VITE_API_URL=https://<run-url>/api`.
+- **Frontend → Cloudflare Pages:** root `frontend/`, build `npm run build`,
+  output `dist`, env `VITE_API_URL` as above. Repo is private but CF Pages can
+  build from a private repo. `vercel.json` left in tree but inert.
+
+### Pending (next session, in order)
+
+1. ~~Fix Prisma `binaryTargets`~~ **DONE 2026-07-02.** `binaryTargets = ["native",
+   "linux-arm64-openssl-3.0.x","debian-openssl-3.0.x"]` (amd64 target is
+   `debian-openssl-3.0.x`, NOT `linux-amd64-…`). `prisma generate`.
+2. ~~Re-validate container~~ **DONE locally** — login + payslip PDF OK.
+3. **DB decision: keep Neon** (free, migrated+seeded). Cloud SQL is the
+   single-vendor alt but no permanent free tier (~$7-10/mo after $300 trial);
+   swap = change `DATABASE_URL` + re-run migrate+seed, no code change.
+4. ~~Execute the Cloud Run deploy~~ **DONE 2026-07-02.** Project
+   `kgf-foundry-06051646` (billing on). Enabled APIs: run, cloudbuild,
+   secretmanager, artifactregistry. Created: AR repo `sasyantra` (+ Cloud Build
+   auto-created `cloud-run-source-deploy` for `--source` deploys), Secret Manager
+   secrets `sasyantra-db-url` + `sasyantra-jwt-secret`. IAM: Cloud Build SA
+   granted `run.admin`/`iam.serviceAccountUser`/`artifactregistry.writer`; Cloud
+   Run runtime SA (default compute) granted `secretmanager.secretAccessor`.
+   Deployed via `gcloud run deploy sasyantra-api --source . --region us-central1
+   --allow-unauthenticated --memory=512Mi --cpu=1 --set-env-vars=JWT_ACCESS_EXPIRES=8h
+   --set-secrets=DATABASE_URL=...,JWT_SECRET=...`. **NOTE: do NOT pass `PORT` in
+   `--set-env-vars` — Cloud Run injects it (reserved; deploy rejects it).**
+   Config files added: `cloudbuild.yaml` (build-from-source trigger, uses
+   Secret Manager), `.gcloudignore` (excludes node_modules/dist/.env/uploads).
+   **Live URL: `https://sasyantra-api-962851079223.us-central1.run.app`** —
+   validated: 401 unauth, login→token, payroll generate count=3, payslip PDF
+   `200 application/pdf`. ✅ Backend is live.
+5. ~~Frontend deploy~~ **DONE 2026-07-02.** Rebuilt `frontend/dist` with
+   `VITE_API_URL=https://sasyantra-api-962851079223.us-central1.run.app/api`.
+   Installed `firebase-tools`; `firebase login` (pentelagowtham@gmail.com);
+   added Firebase to project via **Firebase Console** (CLI `addfirebase` 403s
+   until ToS accepted in console — that's the manual gate). Created `firebase.json`
+   (hosting: public `frontend/dist`, `**→/index.html` SPA rewrite, asset cache
+   headers) + `.firebaserc` (`default: kgf-foundry-06051646`). Deployed via
+   `firebase deploy --only hosting --project kgf-foundry-06051646`.
+   **Frontend URL: https://kgf-foundry-06051646.web.app** — validated: root
+   `200 text/html`, deep route `/payroll` `200` (SPA rewrite), JS asset `200`.
+   ✅ Frontend is live.
+6. ~~Smoke test~~ **DONE.** Full deployed stack validated end-to-end: frontend
+   → Cloud Run backend → Neon. Login → token; `GET /api/payroll/:id/payslip`
+   → `200 application/pdf`. ✅
+7. **(Optional) auto-redeploy on git push** — **backend DONE 2026-07-02** via
+   GitHub Actions + Workload Identity Federation (no GitHub app, no keys to
+   paste). Created: deployer SA `github-deployer@…` (roles run.admin /
+   artifactregistry.writer / secretmanager.secretAccessor + serviceAccountUser
+   on the runtime SA); WIF pool `github-pool` + OIDC provider `github-provider`
+   (issuer `token.actions.githubusercontent.com`, condition
+   `assertion.repository=='Gowtham-Pentela/sasyantra-erp'`, mapping
+   `repository`/`repository_owner`/`subject`); SA WIF binding
+   `principalSet://…/github-pool/attribute.repository/Gowtham-Pentela/sasyantra-erp`
+   → `roles/iam.workloadIdentityUser` (set via `set-iam-policy` JSON — the CLI
+   `add-iam-policy-binding` wrongly rejects valid `principalSet` members; and
+   the format is **`attribute.`** singular, not `attributes.` plural — both
+   were blockers). Workflow `.github/workflows/deploy-backend.yml` triggers on
+   push to `main`/`deploy/free-stack` (paths: backend/**, Dockerfile,
+   cloudbuild.yaml, the workflow), builds the Dockerfile on the runner, pushes
+   to AR repo `sasyantra`, `gcloud run deploy --image` with the same
+   env/secrets. **Activates on first `git push`** of the workflow file. Existing
+   service keeps its last good revision if a workflow run fails (no outage).
+   Frontend: re-run `firebase deploy` after rebuilding `dist` with the right
+   `VITE_API_URL` (not yet automated).
+8. (Loose end) `deploy/render-vercel` PR is open and superseded — close it.
+9. Commit this iteration's changes (see §12).

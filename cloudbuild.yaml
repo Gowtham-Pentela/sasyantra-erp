@@ -1,0 +1,31 @@
+# Cloud Build → Cloud Run: build the Dockerfile from source and deploy on every push.
+# ponytail: build-from-source so `git push` redeploys automatically — no manual docker push.
+# Cloud Build runs on linux/amd64, so the native build matches Cloud Run (binaryTargets already
+# includes debian-openssl-3.0.x). Secrets come from trigger substitutions ($_DATABASE_URL,
+# $_JWT_SECRET) set in GCP — never committed here. Frontend ships separately on Cloudflare Pages.
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '$_IMAGE', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_IMAGE']
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'sasyantra-api'
+      - '--image=$_IMAGE'
+      - '--region=$_REGION'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--timeout=300'
+      - '--set-env-vars=JWT_ACCESS_EXPIRES=8h,PORT=8080'
+      - '--set-secrets=DATABASE_URL=sasyantra-db-url:latest,JWT_SECRET=sasyantra-jwt-secret:latest'
+images:
+  - '$_IMAGE'
+substitutions:
+  _REGION: 'us-central1'
+  _IMAGE: '$_REGION-docker.pkg.dev/$PROJECT_ID/sasyantra/sasyantra-api:$SHORT_SHA'
+options:
+  logging: CLOUD_LOGGING_ONLY

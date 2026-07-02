@@ -4,8 +4,12 @@
 // Coerced to JS number on output via one Express json replacer (main.ts).
 // ponytail: no Client/Invoice/Payment/Expense tables this iteration — stubs only.
 
+// ponytail: pin binaryTargets so the image built on Apple Silicon (arm64) carries
+// the engine for the Cloud Run runtime (linux/amd64, openssl 3.0.x). "native" keeps
+// local dev working. Add more targets only if another host needs them.
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {

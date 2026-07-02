@@ -1,14 +1,13 @@
-import { Module, Controller, Get, Post, Query, Body, Param, ParseIntPipe, Injectable, NotFoundException, Res, Req } from '@nestjs/common';
+import { Module, Controller, Get, Post, Query, Body, Param, ParseIntPipe, Injectable, NotFoundException, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { Prisma, type AttendanceCode } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { Roles } from '../auth/decorators';
-// ponytail: pdf lib is the one justified dep here — Node stdlib can't produce PDFs and the
-// user wants a stored, downloadable payslip (browser-print can't persist a file).
+// ponytail: pdf lib is the one justified dep here — Node stdlib can't produce PDFs.
+// Statelesness note: on Cloud Run the filesystem is ephemeral per-request, so the payslip
+// is rendered to a stream on demand from the stored Payroll row (the source of truth), not a file.
 import PDFDocument from 'pdfkit';
-import { createWriteStream, statSync } from 'fs';
-import { join } from 'path';
 
 // payroll constants — ponytail: flat slabs; move to Settings table when configurable.
 const OT_FACTOR = 1.5;
@@ -144,14 +143,14 @@ class PayrollService {
     res.send(lines.join('\n'));
   }
 
-  // Build a branded payslip PDF, persist it under uploads/, and record a Document row
-  // (entity='Payroll', entityId=payroll.id) so it's stored, audited, and downloadable.
-  private async makePayslipPdf(row: any, employee: any): Promise<{ fileName: string; size: number }> {
-    const fileName = `payslip-${employee.empCode}-${row.month}-${Date.now()}.pdf`;
-    const path = join(process.cwd(), 'uploads', fileName);
+  // Stream a branded payslip PDF straight from the stored Payroll row (stateless — no file
+  // written, so it works on Cloud Run / any ephemeral-filesystem host). The Payroll row is
+  // the source of truth; the PDF is rendered on demand for download.
+  streamPayslip(row: any, employee: any, res: Response) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="payslip-${employee.empCode}-${row.month}.pdf"`);
     const doc = new PDFDocument({ size: 'A4', margins: { top: 50, bottom: 50, left: 50, right: 50 } });
-    const ws = createWriteStream(path);
-    doc.pipe(ws);
+    doc.pipe(res);
     const line = (label: string, amount: any) => `  ${label.padEnd(28)} ${inr(amount).padStart(12)}`;
     const totalEarnings = Number(row.gross) + Number(row.otAmount) + Number(row.bonus) + Number(row.travel) + Number(row.food) + Number(row.otherAllowance);
     const totalDed = Number(row.advanceRecovery) + Number(row.fine) + Number(row.pf) + Number(row.esi) + Number(row.professionalTax) + Number(row.attendanceDeduction);
@@ -190,18 +189,12 @@ class PayrollService {
     doc.moveDown(0.6).font('Helvetica-Bold').fontSize(13).text(`NET PAY: Rs. ${inr(row.net)}`, { align: 'right' });
     doc.fontSize(9).font('Helvetica').text(`Employer Cost: Rs. ${inr(row.employerCost)}   |   Generated: ${new Date().toLocaleDateString('en-IN')}`);
     doc.end();
-    await new Promise<void>((res, rej) => { ws.on('finish', res); ws.on('error', rej); });
-    return { fileName, size: statSync(path).size };
   }
 
-  async payslip(id: number, uploadedById?: number) {
+  async payslip(id: number, res: Response) {
     const row = await this.prisma.payroll.findUnique({ where: { id }, include: { employee: { select: { id: true, empCode: true, name: true, designation: true } } } });
     if (!row) throw new NotFoundException('Payroll row not found');
-    const { fileName, size } = await this.makePayslipPdf(row, row.employee);
-    return this.db().document.create({
-      data: { entity: 'Payroll', entityId: row.id, fileName, originalName: fileName, mimeType: 'application/pdf', size, url: `/uploads/${fileName}`, uploadedById: uploadedById ?? null },
-      select: { id: true, fileName: true, url: true, createdAt: true },
-    });
+    this.streamPayslip(row, row.employee, res);
   }
 }
 
@@ -212,7 +205,7 @@ class PayrollController {
   @Get('export') export(@Query() q: any, @Res() res: Response) { return this.svc.csv(q, res); }
   @Post('generate') @Roles('ADMIN', 'ACCOUNTS') generate(@Body() b: any) { return this.svc.generate(b); }
   @Post(':id/pay') @Roles('ADMIN', 'ACCOUNTS') pay(@Param('id', ParseIntPipe) id: number, @Body() dto: any) { return this.svc.pay(id, dto); }
-  @Post(':id/payslip') @Roles('ADMIN', 'ACCOUNTS') payslip(@Param('id', ParseIntPipe) id: number, @Req() req: any) { return this.svc.payslip(id, req.user?.id); }
+  @Get(':id/payslip') @Roles('ADMIN', 'ACCOUNTS') payslip(@Param('id', ParseIntPipe) id: number, @Res() res: Response) { return this.svc.payslip(id, res); }
 }
 
 @Module({ controllers: [PayrollController], providers: [PayrollService], imports: [PrismaModule] })

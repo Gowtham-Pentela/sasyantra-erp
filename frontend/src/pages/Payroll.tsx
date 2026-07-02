@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Play, Download, Wallet, CheckCircle2, BadgeIndianRupee, UserPlus, FileText } from 'lucide-react';
-import { http } from '../api/client';
+import { http, BASE } from '../api/client';
 import { Card, Badge, Spinner, Empty, Modal, Field, useToast, inr2 } from '../components/ui';
 import { useAuth } from '../store';
 import type { Project, PayrollRow } from '../types';
@@ -45,13 +45,21 @@ export default function Payroll() {
     try { const yyyymm = month.replace('-', ''); const res: any = await http.post('/payroll/generate', { month: yyyymm, projectId: Number(projectId), employeeId: Number(selEmp) }); toast(`Payslip generated for ${res.rows[0]?.employee?.name ?? 'employee'}`); setGenOne(false); setSelEmp(''); load(); } catch (e: any) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
   const genPdf = async (r: PayrollRow) => {
-    try { const res: any = await http.post(`/payroll/${r.id}/payslip`); window.open(res.url, '_blank'); toast('Payslip PDF ready'); }
-    catch (e: any) { toast(e.message, 'err'); }
+    try {
+      const token = useAuth.getState().token;
+      const res = await fetch(`${BASE}/payroll/${r.id}/payslip`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error('Payslip download failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `payslip-${r.employee.empCode}-${r.month}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+      toast('Payslip PDF downloaded');
+    } catch (e: any) { toast(e.message, 'err'); }
   };
   const exportCsv = async () => {
     const yyyymm = month.replace('-', '');
     const token = useAuth.getState().token;
-    const res = await fetch(`/api/payroll/export?month=${yyyymm}&projectId=${projectId}`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${BASE}/payroll/export?month=${yyyymm}&projectId=${projectId}`, { headers: { Authorization: `Bearer ${token}` } });
     const text = await res.text();
     const url = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
     const a = document.createElement('a'); a.href = url; a.download = `payroll-${yyyymm}.csv`; a.click();
