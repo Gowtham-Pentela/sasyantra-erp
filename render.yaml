@@ -1,0 +1,30 @@
+# Render Blueprint — apply via dashboard: New > Blueprint > pick this repo.
+# ponytail: free web service sleeps after 15min inactivity; uploads disk is ephemeral
+# (S3 is the upgrade path per PROJECT_CONTEXT). Starter Postgres is the cheapest managed DB.
+databases:
+  - name: sasyantra-db
+    databaseName: sasyantra_erp
+    plan: starter
+
+services:
+  - type: web
+    name: sasyantra-erp-api
+    runtime: node
+    plan: free
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && node dist/main.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20.17.0"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sasyantra-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_EXPIRES
+        value: "8h"
+      # CORS_ORIGIN: set to the Vercel URL after frontend deploy (cors:true currently allows all)
+      - key: CORS_ORIGIN
+        sync: false

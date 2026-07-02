@@ -1,7 +1,8 @@
 // Minimal fetch wrapper — no axios. Token from zustand auth store.
 import { useAuth } from '../store';
 
-const BASE = '/api';
+// ponytail: '/api' in dev (Vite proxy), absolute VITE_API_URL in prod (Vercel→Render cross-origin)
+const BASE = import.meta.env.VITE_API_URL || '/api';
 
 export class ApiError extends Error {
   status: number;
