@@ -1,12 +1,25 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Briefcase, ArrowRight } from 'lucide-react';
-import { http } from '../api/client';
+import { Plus, Briefcase, ArrowRight, Trash2 } from 'lucide-react';
+import { http, ApiError } from '../api/client';
 import { Card, Badge, Spinner, Empty, Modal, Field, useToast, inr } from '../components/ui';
 import { useAuth } from '../store';
 import type { Project } from '../types';
 
 const EMPTY = { name: '', clientName: '', clientGst: '', siteLocation: '', mapsUrl: '', startDate: new Date().toISOString().slice(0, 10), endDate: '', billingCycle: 'Monthly', paymentTerms: '30 days from invoice', contractValue: 0, gstPercent: 18, status: 'ACTIVE', projectManager: '' };
+
+// ON_HOLD is the "Shelved" bucket — reused, no enum change. ponytail: no migration.
+const FILTERS: { key: Project['status'] | 'ALL'; label: string }[] = [
+  { key: 'ALL', label: 'All' },
+  { key: 'ACTIVE', label: 'Ongoing' },
+  { key: 'ON_HOLD', label: 'Shelved' },
+  { key: 'COMPLETED', label: 'Completed' },
+  { key: 'CANCELLED', label: 'Cancelled' },
+];
+
+const tone = (s: Project['status']): 'green' | 'amber' | 'rose' | 'slate' =>
+  s === 'ACTIVE' ? 'green' : s === 'ON_HOLD' ? 'amber' : s === 'CANCELLED' ? 'rose' : 'slate';
+const label = (s: Project['status']) => (s === 'ON_HOLD' ? 'SHELVED' : s);
 
 export default function Projects() {
   const nav = useNavigate();
@@ -14,7 +27,9 @@ export default function Projects() {
   const canEdit = role === 'ADMIN' || role === 'OPS';
   const [rows, setRows] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<Project['status'] | 'ALL'>('ALL');
   const [open, setOpen] = useState(false);
+  const [delTarget, setDelTarget] = useState<Project | null>(null);
   const [form, setForm] = useState<any>(EMPTY);
   const toast = useToast();
 
@@ -28,20 +43,39 @@ export default function Projects() {
     try { await http.post('/projects', body); toast('Project created'); setOpen(false); load(); } catch (err: any) { toast(err.message, 'err'); }
   };
 
+  const confirmDelete = async () => {
+    if (!delTarget) return;
+    try { await http.del(`/projects/${delTarget.id}`); toast('Project deleted'); setDelTarget(null); load(); }
+    catch (err: any) { toast(err instanceof ApiError ? err.message : 'Delete failed', 'err'); setDelTarget(null); }
+  };
+
+  const filtered = filter === 'ALL' ? rows : rows.filter((p) => p.status === filter);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-semibold tracking-tight">Projects</h1><p className="text-sm text-slate-400">{rows.length} projects</p></div>
+        <div><h1 className="text-2xl font-semibold tracking-tight">Projects</h1><p className="text-sm text-slate-400">{filtered.length} of {rows.length} projects</p></div>
         {canEdit && <button onClick={() => { setForm(EMPTY); setOpen(true); }} className="btn-primary"><Plus size={16} /> New Project</button>}
       </div>
 
-      {loading ? <Spinner /> : !rows.length ? <Empty msg="No projects yet" /> : (
+      <div className="flex flex-wrap gap-1.5">
+        {FILTERS.map((f) => (
+          <button key={f.key} onClick={() => setFilter(f.key)} className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${filter === f.key ? 'bg-brand-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>{f.label}</button>
+        ))}
+      </div>
+
+      {loading ? <Spinner /> : !filtered.length ? <Empty msg="No projects in this view" /> : (
         <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {rows.map((p) => (
-            <button key={p.id} onClick={() => nav(`/projects/${p.id}`)} className="card p-5 text-left hover:shadow-float transition group">
+          {filtered.map((p) => (
+            <div key={p.id} onClick={() => nav(`/projects/${p.id}`)} className="card p-5 cursor-pointer hover:shadow-float transition group relative">
               <div className="flex items-start justify-between">
                 <div className="h-10 w-10 rounded-xl bg-brand-50 dark:bg-brand-950 text-brand-600 dark:text-brand-300 grid place-items-center"><Briefcase size={20} /></div>
-                <Badge tone={p.status === 'ACTIVE' ? 'green' : 'slate'}>{p.status}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge tone={tone(p.status)}>{label(p.status)}</Badge>
+                  {canEdit && (
+                    <button onClick={(e) => { e.stopPropagation(); setDelTarget(p); }} disabled={p.status !== 'CANCELLED'} title={p.status === 'CANCELLED' ? 'Delete project' : 'Cancel this project first (in its workspace → Status)'} className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"><Trash2 size={15} /></button>
+                  )}
+                </div>
               </div>
               <h3 className="font-semibold mt-3 group-hover:text-brand-600">{p.name}</h3>
               <div className="text-xs text-slate-400">{p.code} · {p.clientName}</div>
@@ -50,7 +84,7 @@ export default function Projects() {
                 <div><div className="text-xs text-slate-400">GST</div><div className="font-semibold">{p.gstPercent}%</div></div>
               </div>
               <div className="mt-3 text-xs text-brand-600 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">Open workspace <ArrowRight size={12} /></div>
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -66,9 +100,15 @@ export default function Projects() {
           <Field label="Contract Value (₹)"><input type="number" className="input" value={form.contractValue} onChange={(e) => set('contractValue', e.target.value)} /></Field>
           <Field label="GST %"><input type="number" className="input" value={form.gstPercent} onChange={(e) => set('gstPercent', e.target.value)} /></Field>
           <Field label="Project Manager"><input className="input" value={form.projectManager} onChange={(e) => set('projectManager', e.target.value)} /></Field>
-          <Field label="Status"><select className="input" value={form.status} onChange={(e) => set('status', e.target.value)}><option>ACTIVE</option><option>ON_HOLD</option><option>COMPLETED</option><option>CANCELLED</option></select></Field>
+          <Field label="Status"><select className="input" value={form.status} onChange={(e) => set('status', e.target.value)}><option value="ACTIVE">ACTIVE (Ongoing)</option><option value="ON_HOLD">ON_HOLD (Shelved)</option><option value="COMPLETED">COMPLETED</option><option value="CANCELLED">CANCELLED</option></select></Field>
           <div className="sm:col-span-2 flex justify-end gap-2 pt-2"><button type="button" onClick={() => setOpen(false)} className="btn-ghost">Cancel</button><button className="btn-primary">Create project</button></div>
         </form>
+      </Modal>
+
+      <Modal open={!!delTarget} onClose={() => setDelTarget(null)} title="Delete project?">
+        <p className="text-sm text-slate-500">Permanently delete <b>{delTarget?.name}</b> ({delTarget?.code})? This cannot be undone.</p>
+        <p className="text-xs text-slate-400 mt-2">Associated expenses, invoices, payroll, quotations, allocations and work orders are kept as orphaned history (their project link is cleared). Only the project itself is removed.</p>
+        <div className="flex justify-end gap-2 pt-4"><button onClick={() => setDelTarget(null)} className="btn-ghost">Cancel</button><button onClick={confirmDelete} className="btn-primary bg-rose-600 hover:bg-rose-700">Delete</button></div>
       </Modal>
     </div>
   );

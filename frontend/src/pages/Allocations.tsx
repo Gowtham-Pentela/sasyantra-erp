@@ -63,7 +63,7 @@ export default function Allocations() {
             <tbody>{rows.map((a) => (
               <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                 <td className="td">{a.employee?.name} <span className="text-xs text-slate-400">{a.employee?.empCode}</span></td>
-                <td className="td">{a.project?.name}</td>
+                <td className="td">{a.project?.name ?? '—'}</td>
                 <td className="td">{a.role || '—'}</td>
                 <td className="td">{inr(a.dailyWage)}</td>
                 <td className="td">{fmt(a.effectiveDate)}</td>

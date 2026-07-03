@@ -28,6 +28,10 @@ export interface Allocation {
   project?: { id: number; name: string; clientName: string };
 }
 
+export interface ProjectProgress {
+  id: number; projectId: number; month: number; percent: number; note?: string | null; createdAt: string;
+}
+
 export type AttendanceCode = 'P' | 'A' | 'OT' | 'HD' | 'LV' | 'WO' | 'HL' | 'NS' | 'DS' | 'TR';
 
 export interface PayrollRow {
