@@ -159,6 +159,35 @@ PMN=$(curl -s "${auth[@]}" "$BASE/reports/project-margin" | python3 -c "import s
 HC=$(curl -s "${auth[@]}" "$BASE/analytics/headcount" | J "['total']")
 [ -n "$HC" ] && [ "$HC" -ge 1 ] 2>/dev/null && ok "analytics/headcount total=$HC" || bad "analytics/headcount total=$HC"
 
+# 18. project delete requires CANCELLED status — an ACTIVE project (PRJ) is rejected (400)
+DCODE=$(curl -s -o /dev/null -w "%{http_code}" "${auth[@]}" -X DELETE "$BASE/projects/$PRJ")
+[ "$DCODE" = "400" ] && ok "delete non-cancelled project blocked (400)" || bad "delete non-cancelled project got $DCODE (expected 400)"
+
+# 19. cancel-then-delete: create a project, set CANCELLED, delete, then 404 on fetch
+NEW=$(curl -s "${auth[@]}" -X POST "$BASE/projects" -H 'Content-Type: application/json' -d '{"name":"Verify Disposable","clientName":"Tmp Co","contractValue":0,"gstPercent":0}')
+NID=$(echo "$NEW" | J "['id']")
+curl -s "${auth[@]}" -X PUT "$BASE/projects/$NID" -H 'Content-Type: application/json' -d '{"status":"CANCELLED"}' >/dev/null
+XCODE=$(curl -s -o /dev/null -w "%{http_code}" "${auth[@]}" -X DELETE "$BASE/projects/$NID")
+GCODE=$(curl -s -o /dev/null -w "%{http_code}" "${auth[@]}" "$BASE/projects/$NID")
+[ "$XCODE" = "200" ] && [ "$GCODE" = "404" ] && ok "cancelled project deleted (200) then 404 on fetch" || bad "disposable project delete ($XCODE) / fetch ($GCODE)"
+
+# 19b. orphan preservation: an expense tied to a deleted project survives with projectId=null
+ORP=$(curl -s "${auth[@]}" -X POST "$BASE/projects" -H 'Content-Type: application/json' -d '{"name":"Verify Orphan","clientName":"Tmp Co2","contractValue":0,"gstPercent":0}')
+OID=$(echo "$ORP" | J "['id']")
+OEXP=$(curl -s "${auth[@]}" -X POST "$BASE/expenses" -H 'Content-Type: application/json' -d "{\"date\":\"2026-07-01\",\"category\":\"Orphan Test\",\"amount\":1234,\"gst\":0,\"projectId\":$OID}")
+OEID=$(echo "$OEXP" | J "['id']")
+curl -s "${auth[@]}" -X PUT "$BASE/projects/$OID" -H 'Content-Type: application/json' -d '{"status":"CANCELLED"}' >/dev/null
+curl -s "${auth[@]}" -X DELETE "$BASE/projects/$OID" >/dev/null
+OEXP_AFTER=$(curl -s "${auth[@]}" "$BASE/expenses" | python3 -c "import sys,json;d=[e for e in json.load(sys.stdin) if e['id']==$OEID];print(d[0]['projectId'] if d else 'gone')")
+[ "$OEXP_AFTER" = "None" ] && ok "orphaned expense survived with projectId=null" || bad "orphan expense projectId=$OEXP_AFTER (expected null)"
+
+# 20. project progress: upsert + read + update round-trips the % and note
+curl -s "${auth[@]}" -X POST "$BASE/projects/$PRJ/progress" -H 'Content-Type: application/json' -d "{\"month\":$MMM,\"percent\":35,\"note\":\"verify\"}" >/dev/null
+P1=$(curl -s "${auth[@]}" "$BASE/projects/$PRJ/progress" | python3 -c "import sys,json;d=[x for x in json.load(sys.stdin) if x['month']==$MMM];print(d[0]['percent'] if d else '')")
+curl -s "${auth[@]}" -X POST "$BASE/projects/$PRJ/progress" -H 'Content-Type: application/json' -d "{\"month\":$MMM,\"percent\":50,\"note\":\"updated\"}" >/dev/null
+P2=$(curl -s "${auth[@]}" "$BASE/projects/$PRJ/progress" | python3 -c "import sys,json;d=[x for x in json.load(sys.stdin) if x['month']==$MMM];print(d[0]['percent'] if d else '')")
+[ "$P1" = "35" ] && [ "$P2" = "50" ] && ok "progress upsert ($P1%) then update ($P2%)" || bad "progress round-trip $P1 → $P2"
+
 echo
 echo "Result: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

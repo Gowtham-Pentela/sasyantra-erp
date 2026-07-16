@@ -3,5 +3,6 @@ dist/
 .env
 *.log
 .DS_Store
+.firebase/
 backend/prisma/migrations/*/migration.sql.confirm
 backend/uploads/

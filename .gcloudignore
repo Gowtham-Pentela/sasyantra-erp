@@ -1,0 +1,15 @@
+# ponytail: the Dockerfile runs `npm ci` + `prisma generate` itself, so the build
+# only needs source. Excluding these keeps the source tarball small and avoids
+# leaking local .env / build artifacts / uploads into Cloud Build.
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.git/
+.git/**
+.env
+**/.env
+*.log
+.DS_Store
+backend/uploads/
+backend/prisma/migrations/*/migration.sql.confirm

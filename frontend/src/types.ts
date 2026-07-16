@@ -15,7 +15,7 @@ export interface Employee {
 export interface Project {
   id: number; code: string; name: string; clientName: string; clientGst?: string | null;
   siteLocation?: string | null; mapsUrl?: string | null; startDate: string; endDate?: string | null;
-  billingCycle?: string | null; paymentTerms?: string | null; contractValue: number;
+  billingCycle?: string | null; paymentTerms?: number | null; contractValue: number;
   gstPercent: number; status: 'ACTIVE' | 'ON_HOLD' | 'COMPLETED' | 'CANCELLED';
   projectManager?: string | null; createdAt: string;
   allocations?: Allocation[];
@@ -26,6 +26,10 @@ export interface Allocation {
   dailyWage: number; effectiveDate: string; endDate?: string | null; remarks?: string | null;
   employee?: { id: number; empCode: string; name: string; designation?: string | null; status: string };
   project?: { id: number; name: string; clientName: string };
+}
+
+export interface ProjectProgress {
+  id: number; projectId: number; month: number; percent: number; note?: string | null; createdAt: string;
 }
 
 export type AttendanceCode = 'P' | 'A' | 'OT' | 'HD' | 'LV' | 'WO' | 'HL' | 'NS' | 'DS' | 'TR';

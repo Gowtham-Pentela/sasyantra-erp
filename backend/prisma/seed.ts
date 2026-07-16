@@ -19,6 +19,7 @@ async function main() {
   await prisma.attendance.deleteMany();
   await prisma.allocation.deleteMany();
   await prisma.employee.deleteMany();
+  await prisma.projectProgress.deleteMany();
   await prisma.project.deleteMany();
   await prisma.user.deleteMany();
 
@@ -41,7 +42,7 @@ async function main() {
         startDate: new Date('2025-01-01'),
         endDate: new Date('2026-12-31'),
         billingCycle: 'Monthly',
-        paymentTerms: '30 days from invoice',
+        paymentTerms: 30,
         contractValue: 4800000,
         gstPercent: 18,
         status: ProjectStatus.ACTIVE,
@@ -59,7 +60,7 @@ async function main() {
         startDate: new Date('2025-06-01'),
         endDate: new Date('2027-05-31'),
         billingCycle: 'Monthly',
-        paymentTerms: '45 days from invoice',
+        paymentTerms: 45,
         contractValue: 7200000,
         gstPercent: 18,
         status: ProjectStatus.ACTIVE,
@@ -135,7 +136,7 @@ async function main() {
     for (const e of employees) {
       await prisma.attendance.upsert({
         where: { employeeId_date: { employeeId: e.id, date: day } },
-        create: { employeeId: e.id, date: day, code: AttendanceCode.P, otHours: d % 2 ? 2 : 0, food: 50 },
+        create: { employeeId: e.id, date: day, code: AttendanceCode.P, food: 50 },
         update: {},
       });
     }
@@ -200,6 +201,17 @@ async function main() {
   ]);
   await prisma.project.update({ where: { id: projects[0].id }, data: { clientId: clients[0].id } });
   await prisma.project.update({ where: { id: projects[1].id }, data: { clientId: clients[1].id } });
+
+  // sample monthly completion % for project 1 (last 3 months) so the chart isn't empty
+  const ym = (d: Date) => Number(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`);
+  const m0 = new Date(today.getFullYear(), today.getMonth() - 3, 1);
+  const m1 = new Date(today.getFullYear(), today.getMonth() - 2, 1);
+  const m2 = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  await Promise.all([
+    prisma.projectProgress.create({ data: { projectId: projects[0].id, month: ym(m0), percent: 25, note: 'Mobilisation complete' } }),
+    prisma.projectProgress.create({ data: { projectId: projects[0].id, month: ym(m1), percent: 45, note: 'Phase 1 underway' } }),
+    prisma.projectProgress.create({ data: { projectId: projects[0].id, month: ym(m2), percent: 60, note: 'Phase 1 nearing handover' } }),
+  ]);
 
   await prisma.quotation.create({
     data: {
