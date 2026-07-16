@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import ReactECharts from 'echarts-for-react';
-import { ArrowLeft, MapPin, User, AlertCircle, TrendingUp, Trash2 } from 'lucide-react';
+import { ArrowLeft, MapPin, User, AlertCircle, TrendingUp, Trash2, Pencil } from 'lucide-react';
 import { http } from '../api/client';
-import { Card, Badge, Spinner, Empty, useToast, inr } from '../components/ui';
+import { Card, Badge, Spinner, Empty, Modal, Field, useToast, inr } from '../components/ui';
 import { useAuth } from '../store';
+import { ProjectFields } from './Projects';
 import type { Project, ProjectProgress } from '../types';
 
 export default function ProjectWorkspace() {
@@ -17,6 +18,8 @@ export default function ProjectWorkspace() {
   const [loading, setLoading] = useState(true);
   const toast = useToast();
   const [pf, setPf] = useState({ month: new Date().toISOString().slice(0, 7), percent: '', note: '' });
+  const [editing, setEditing] = useState(false);
+  const [ef, setEf] = useState<any>(null);
 
   const loadProg = async () => { if (id) setProg(await http.get(`/projects/${id}/progress`)); };
   useEffect(() => { if (id) http.get(`/projects/${id}`).then((r) => { setP(r); setLoading(false); }); loadProg(); }, [id]);
@@ -32,6 +35,18 @@ export default function ProjectWorkspace() {
 
   const setStatus = async (status: string) => {
     try { await http.put(`/projects/${id}`, { status }); setP((cur: any) => cur && { ...cur, status }); toast(`Status set to ${status === 'ON_HOLD' ? 'SHELVED' : status}`); }
+    catch (err: any) { toast(err.message, 'err'); }
+  };
+
+  const openEdit = () => {
+    setEf({ ...p, startDate: String(p!.startDate).slice(0, 10), endDate: p!.endDate ? String(p!.endDate).slice(0, 10) : '' });
+    setEditing(true);
+  };
+  const setE = (k: string, v: any) => setEf((f: any) => ({ ...f, [k]: v }));
+  const saveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const body = { ...ef, contractValue: Number(ef.contractValue), gstPercent: Number(ef.gstPercent), paymentTerms: ef.paymentTerms === '' || ef.paymentTerms == null ? null : Number(ef.paymentTerms), startDate: new Date(ef.startDate), endDate: ef.endDate ? new Date(ef.endDate) : null };
+    try { await http.put(`/projects/${id}`, body); toast('Project updated'); setEditing(false); setEf(null); setP((cur: any) => cur && { ...cur, ...body }); }
     catch (err: any) { toast(err.message, 'err'); }
   };
 
@@ -60,6 +75,7 @@ export default function ProjectWorkspace() {
         </div>
         {canEdit ? (
           <div className="flex items-center gap-2">
+            <button onClick={openEdit} className="btn-ghost"><Pencil size={15} /> Edit details</button>
             <label className="text-xs text-slate-400">Status</label>
             <select className="input !py-1.5 !w-auto" value={p.status} onChange={(e) => setStatus(e.target.value)}>
               <option value="ACTIVE">ACTIVE (Ongoing)</option>
@@ -83,7 +99,7 @@ export default function ProjectWorkspace() {
             <Row label="Start" value={fmt(p.startDate)} />
             <Row label="End" value={p.endDate ? fmt(p.endDate) : 'Open'} />
             <Row label="Billing cycle" value={p.billingCycle || '—'} />
-            <Row label="Payment terms" value={p.paymentTerms || '—'} />
+            <Row label="Payment terms" value={p.paymentTerms != null ? `${p.paymentTerms} days` : '—'} />
             {p.mapsUrl && <a href={p.mapsUrl} target="_blank" className="text-brand-600 text-sm inline-flex items-center gap-1 hover:underline"><MapPin size={14} /> View on map</a>}
           </dl>
         </Card>
@@ -175,6 +191,15 @@ export default function ProjectWorkspace() {
           </table></div>
         )}
       </Card>
+
+      <Modal open={editing} onClose={() => { setEditing(false); setEf(null); }} title="Edit Project" wide>
+        {ef && (
+          <form onSubmit={saveEdit} className="grid sm:grid-cols-2 gap-3">
+            {ProjectFields(ef, setE)}
+            <div className="sm:col-span-2 flex justify-end gap-2 pt-2"><button type="button" onClick={() => { setEditing(false); setEf(null); }} className="btn-ghost">Cancel</button><button className="btn-primary">Save changes</button></div>
+          </form>
+        )}
+      </Modal>
     </div>
   );
 }

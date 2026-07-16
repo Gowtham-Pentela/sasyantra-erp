@@ -14,7 +14,9 @@ export class ApiError extends Error {
 
 export async function api<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
   const token = useAuth.getState().token;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(opts.headers as any) };
+  const isForm = opts.body instanceof FormData;
+  const headers: Record<string, string> = { ...(opts.headers as any) };
+  if (!isForm) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`${BASE}${path}`, { ...opts, headers });
   if (res.status === 204) return undefined as T;
@@ -33,4 +35,6 @@ export const http = {
   post: <T = any>(p: string, body?: any) => api<T>(p, { method: 'POST', body: body ? JSON.stringify(body) : undefined }),
   put: <T = any>(p: string, body?: any) => api<T>(p, { method: 'PUT', body: body ? JSON.stringify(body) : undefined }),
   del: <T = any>(p: string) => api<T>(p, { method: 'DELETE' }),
+  // multipart upload — browser sets the boundary, so no Content-Type header.
+  upload: <T = any>(p: string, file: File) => api<T>(p, { method: 'POST', body: (() => { const fd = new FormData(); fd.append('file', file); return fd; })() }),
 };

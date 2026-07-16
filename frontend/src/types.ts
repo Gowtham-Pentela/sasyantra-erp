@@ -15,7 +15,7 @@ export interface Employee {
 export interface Project {
   id: number; code: string; name: string; clientName: string; clientGst?: string | null;
   siteLocation?: string | null; mapsUrl?: string | null; startDate: string; endDate?: string | null;
-  billingCycle?: string | null; paymentTerms?: string | null; contractValue: number;
+  billingCycle?: string | null; paymentTerms?: number | null; contractValue: number;
   gstPercent: number; status: 'ACTIVE' | 'ON_HOLD' | 'COMPLETED' | 'CANCELLED';
   projectManager?: string | null; createdAt: string;
   allocations?: Allocation[];

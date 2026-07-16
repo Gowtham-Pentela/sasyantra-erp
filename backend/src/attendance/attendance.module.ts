@@ -2,6 +2,7 @@ import { Module, Controller, Get, Put, Post, Query, Body, Injectable, BadRequest
 import { PrismaService } from '../prisma/prisma.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { Roles } from '../auth/decorators';
+import { auditContext } from '../audit/audit.extension';
 
 function monthRange(yyyymm: string) {
   const year = Number(yyyymm.slice(0, 4));
@@ -13,10 +14,19 @@ function monthRange(yyyymm: string) {
 function dateStr(d: Date) { return d.toISOString().slice(0, 10); }
 // local YYYY-MM-DD (avoid UTC shift on joiningDate comparisons)
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// every calendar day in [start, end) — used for the grid columns (manual marking
+// must be possible on weekends too, e.g. Saturday OT).
+function allDays(start: Date, end: Date) {
+  const days: Date[] = [];
+  for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) days.push(new Date(d));
+  return days;
+}
+// Mon–Fri only — used by bulk-mark so weekends are never auto-set to Present.
 function weekdays(start: Date, end: Date) {
   const days: Date[] = [];
   for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
-    if (d.getDay() !== 0) days.push(new Date(d)); // skip Sunday
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) days.push(new Date(d)); // skip Sat(6) + Sun(0)
   }
   return days;
 }
@@ -37,7 +47,7 @@ class AttendanceService {
       : [];
     const attendance: Record<number, Record<string, any>> = {};
     for (const r of rows) (attendance[r.employeeId] ??= {})[dateStr(r.date)] = r;
-    return { employees, attendance, days: weekdays(start, end).map((d) => dateStr(d)) };
+    return { employees, attendance, days: allDays(start, end).map((d) => dateStr(d)) };
   }
 
   async upsert(dto: any) {
@@ -75,6 +85,30 @@ class AttendanceService {
     }
     return { created: n };
   }
+
+  // Revert a bulk-mark: delete attendance rows for the month whose code matches the bulk
+  // code AND that carry no manual edits (zero OT/advance/bonus/travel/food/fine/other, no
+  // remarks). Manually-edited cells are left alone. ponytail: deleteMany is unaudited
+  // per-row (known limitation, §11 of PROJECT_CONTEXT); a single summary audit entry is
+  // added so the revert event itself is traceable.
+  async revertBulk(query: { month: string; code?: string }) {
+    const { start, end } = monthRange(query.month);
+    const code: any = query.code || 'P';
+    const where = {
+      date: { gte: start, lt: end }, code,
+      otHours: 0, advance: 0, bonus: 0, travel: 0, food: 0, fine: 0, otherAllowance: 0,
+      remarks: null,
+    };
+    const r = await this.prisma.attendance.deleteMany({ where });
+    const ctx = auditContext.getStore();
+    await this.prisma.auditLog.create({ data: {
+      userId: ctx?.userId ?? null, userName: ctx?.userName ?? null,
+      module: 'Attendance', action: 'DELETE', entity: 'Attendance',
+      entityId: `bulk-revert:${query.month}:${code}`, newValue: { deleted: r.count } as any,
+      ip: ctx?.ip ?? null, userAgent: ctx?.userAgent ?? null,
+    } });
+    return { deleted: r.count };
+  }
 }
 
 @Controller('attendance')
@@ -83,6 +117,7 @@ class AttendanceController {
   @Get() byMonth(@Query() q: any) { return this.svc.byMonth(q); }
   @Put() @Roles('ADMIN', 'OPS', 'ACCOUNTS') upsert(@Body() dto: any) { return this.svc.upsert(dto); }
   @Post('bulk') @Roles('ADMIN', 'OPS') bulk(@Query() q: any) { return this.svc.bulk(q); }
+  @Post('bulk-revert') @Roles('ADMIN', 'OPS') revertBulk(@Query() q: any) { return this.svc.revertBulk(q); }
 }
 
 @Module({ controllers: [AttendanceController], providers: [AttendanceService], imports: [PrismaModule] })

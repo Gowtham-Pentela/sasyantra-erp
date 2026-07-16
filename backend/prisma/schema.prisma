@@ -159,7 +159,7 @@ model Project {
   startDate      DateTime       @default(now())
   endDate        DateTime?
   billingCycle   String?
-  paymentTerms   String?
+  paymentTerms   Int?           // credit period in days
   contractValue  Decimal        @default(0) @db.Decimal(18, 2)
   gstPercent     Decimal        @default(0) @db.Decimal(5, 2)
   status         ProjectStatus  @default(ACTIVE)

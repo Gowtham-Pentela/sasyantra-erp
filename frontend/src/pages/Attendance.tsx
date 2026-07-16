@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Zap, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Zap, ChevronLeft, ChevronRight, Undo2 } from 'lucide-react';
 import { http } from '../api/client';
 import { Card, Badge, Spinner, Empty, Modal, Field, useToast } from '../components/ui';
 import { useAuth } from '../store';
@@ -13,6 +13,10 @@ const CODE_TONE: Record<string, string> = {
   NS: 'bg-indigo-500 text-white', DS: 'bg-brand-400 text-white', TR: 'bg-cyan-500 text-white',
 };
 const codeLabel = (c: AttendanceCode) => c;
+const CODE_MEANING: Record<string, string> = {
+  P: 'Present', A: 'Absent', OT: 'Overtime', HD: 'Half Day', WO: 'Weekly Off',
+  LV: 'Leave', HL: 'Holiday', NS: 'Night Shift', DS: 'Double Shift', TR: 'Training',
+};
 // local YYYY-MM-DD from a Date/ISO string (matches backend joining-date gate)
 const ymd = (s: string) => { const d = new Date(s); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
@@ -48,10 +52,16 @@ export default function Attendance() {
     try { await http.put('/attendance', { employeeId: cell.emp.id, date: cell.date, ...form, otHours: Number(form.otHours), advance: Number(form.advance), bonus: Number(form.bonus), travel: Number(form.travel), food: Number(form.food), fine: Number(form.fine), otherAllowance: Number(form.otherAllowance) }); toast('Attendance saved'); setCell(null); load(); } catch (err: any) { toast(err.message, 'err'); }
   };
   const bulk = async () => {
-    if (!confirm(`Mark all weekdays Present for ${ymLabel}? (skips days already marked)`)) return;
+    if (!confirm(`Mark all weekdays (Mon–Fri) Present for ${ymLabel}? (skips weekends + days already marked)`)) return;
     const yyyymm = month.replace('-', '');
     const res: any = await http.post(`/attendance/bulk?month=${yyyymm}&code=P`);
     toast(`${res.created} attendance rows created`); load();
+  };
+  const revertBulk = async () => {
+    if (!confirm(`Revert bulk-marked Present rows for ${ymLabel}? Removes only untouched auto-marked rows; manually edited cells are kept.`)) return;
+    const yyyymm = month.replace('-', '');
+    const res: any = await http.post(`/attendance/bulk-revert?month=${yyyymm}&code=P`);
+    toast(`${res.deleted} rows reverted`); load();
   };
 
   const shiftMonth = (d: number) => { const [y, m] = month.split('-').map(Number); const dt = new Date(y, m - 1 + d, 1); setMonth(dt.toISOString().slice(0, 7)); };
@@ -66,15 +76,18 @@ export default function Attendance() {
             <input type="month" className="input w-auto" value={month} onChange={(e) => setMonth(e.target.value)} />
             <button onClick={() => shiftMonth(1)} className="btn-ghost !p-2"><ChevronRight size={16} /></button>
           </div>
-          {canEdit && <button onClick={bulk} className="btn-primary"><Zap size={14} /> Bulk P (weekdays)</button>}
+          {canEdit && <>
+            <button onClick={bulk} className="btn-primary"><Zap size={14} /> Bulk P (weekdays)</button>
+            <button onClick={revertBulk} className="btn-ghost"><Undo2 size={14} /> Revert bulk</button>
+          </>}
         </div>
       </div>
 
       <Card className="p-4">
         {loading || !data ? <Spinner /> : !data.employees.length ? <Empty msg="No active employees" /> : (
           <>
-            <div className="flex flex-wrap gap-1.5 mb-3 text-xs">
-              {CODES.map((c) => <span key={c} className="flex items-center gap-1"><span className={`h-4 w-4 rounded ${CODE_TONE[c]} grid place-items-center text-[9px] font-bold`}>{c[0]}</span>{codeLabel(c)}</span>)}
+            <div className="flex flex-wrap gap-x-3 gap-y-1.5 mb-3 text-xs">
+              {CODES.map((c) => <span key={c} className="flex items-center gap-1" title={CODE_MEANING[c]}><span className={`h-4 w-4 rounded ${CODE_TONE[c]} grid place-items-center text-[9px] font-bold`}>{c[0]}</span><span className="text-slate-500 dark:text-slate-400"><b className="text-slate-700 dark:text-slate-200">{c}</b> — {CODE_MEANING[c]}</span></span>)}
             </div>
             <div className="overflow-auto max-h-[70vh]">
               <table className="border-separate border-spacing-0">
@@ -83,8 +96,8 @@ export default function Attendance() {
                     <th className="th sticky left-0 z-20 bg-white dark:bg-slate-900 min-w-[180px]">Employee</th>
                     {data.days.map((dstr) => {
                       const d = new Date(dstr + 'T00:00:00');
-                      const sun = d.getDay() === 0;
-                      return <th key={dstr} className={`th text-center w-10 ${sun ? 'text-rose-400' : ''}`}>{d.getDate()}<div className="text-[9px] font-normal text-slate-400">{d.toLocaleDateString('en-IN', { weekday: 'narrow' })}</div></th>;
+                      const weekend = d.getDay() === 0 || d.getDay() === 6;
+                      return <th key={dstr} className={`th text-center w-10 ${weekend ? 'text-rose-400' : ''}`}>{d.getDate()}<div className="text-[9px] font-normal text-slate-400">{d.toLocaleDateString('en-IN', { weekday: 'narrow' })}</div></th>;
                     })}
                   </tr>
                 </thead>
